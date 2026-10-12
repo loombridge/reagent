@@ -1527,7 +1527,16 @@ impl Synth {
                 // modulated level is applied below instead.
                 unit.osc.params_mut().level = if level_mod.is_some() { 100.0 } else { ch.level };
                 unit.osc
-                    .process(os_n, &inputs, &mut self.osc_out[..os_n * lane_count]);
+                    // Always the SIMD kernel: the oscillator's scalar path for
+                    // a few lanes reads the table differently, and which path a
+                    // lane count takes depends on the CPU's vector width, so
+                    // renders would differ between platforms.
+                    .process_at(
+                        lspk_dsp::simd::level(),
+                        os_n,
+                        &inputs,
+                        &mut self.osc_out[..os_n * lane_count],
+                    );
                 self.uni_out[..os_n * 2 * S].fill(0.0);
                 unit.lanes.mix(
                     os_n,

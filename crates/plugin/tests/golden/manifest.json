@@ -7,7 +7,7 @@
       "channels": 2,
       "frames": 72000,
       "bits": 24,
-      "render_hash": "fnv1a64:a2c73baa42085be1"
+      "render_hash": "fnv1a64:eb108faf8d09e6f1"
     },
     "init": {
       "made_on": "macos-aarch64",
@@ -15,7 +15,7 @@
       "channels": 2,
       "frames": 72000,
       "bits": 24,
-      "render_hash": "fnv1a64:f86c8d086f700b49"
+      "render_hash": "fnv1a64:0dcf48026669ecf1"
     },
     "pad": {
       "made_on": "macos-aarch64",
@@ -23,7 +23,7 @@
       "channels": 2,
       "frames": 72000,
       "bits": 24,
-      "render_hash": "fnv1a64:506e2abeb18b6c9b"
+      "render_hash": "fnv1a64:02e4f4ec9d068156"
     },
     "supersaw": {
       "made_on": "macos-aarch64",
