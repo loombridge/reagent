@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+# The fixture is a workspace of its own, which `cargo xtask deny-selftest`
+# checks against deny.toml.
+exclude = ["xtask/fixtures"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/loombridge/reagent"
+publish = false
+
+[workspace.dependencies]
+reagent-engine = { path = "crates/engine" }
+reagent-content = { path = "crates/content" }
+reagent-import = { path = "crates/import" }
+reagent-ui = { path = "crates/ui" }
+reagent = { path = "crates/plugin" }
+reagent-cli = { path = "crates/cli" }
+
+# The plug-in kit, by git revision until its API settles. Every kit crate
+# comes from the same revision; to work on the kit and Reagent at once, patch
+# them to a local checkout (CONTRIBUTING.md, "Working on the kit and Reagent
+# at once") rather than editing these lines.
+lspk-dsp = { git = "https://github.com/loombridge/plugin-kit", rev = "708af024de58dafbfcb719bc3bf7394032265bc1" }
+lspk-plugin = { git = "https://github.com/loombridge/plugin-kit", rev = "708af024de58dafbfcb719bc3bf7394032265bc1" }
+lspk-ui = { git = "https://github.com/loombridge/plugin-kit", rev = "708af024de58dafbfcb719bc3bf7394032265bc1" }
+
+[workspace.lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+undocumented_unsafe_blocks = "warn"
+unimplemented = "warn"

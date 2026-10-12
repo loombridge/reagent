@@ -1,0 +1,12 @@
+[package]
+name = "reagent-import"
+description = "Imports presets and wavetables made in other synthesisers into Reagent patches."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
