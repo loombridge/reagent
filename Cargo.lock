@@ -11,17 +11,17 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "lspk-dsp"
 version = "0.0.0"
-source = "git+https://github.com/loombridge/plugin-kit?rev=03f6c693e9c3a0c191251b13d9e45766efa1d3b3#03f6c693e9c3a0c191251b13d9e45766efa1d3b3"
+source = "git+https://github.com/loombridge/plugin-kit?rev=708af024de58dafbfcb719bc3bf7394032265bc1#708af024de58dafbfcb719bc3bf7394032265bc1"
 
 [[package]]
 name = "lspk-plugin"
 version = "0.0.0"
-source = "git+https://github.com/loombridge/plugin-kit?rev=03f6c693e9c3a0c191251b13d9e45766efa1d3b3#03f6c693e9c3a0c191251b13d9e45766efa1d3b3"
+source = "git+https://github.com/loombridge/plugin-kit?rev=708af024de58dafbfcb719bc3bf7394032265bc1#708af024de58dafbfcb719bc3bf7394032265bc1"
 
 [[package]]
 name = "lspk-ui"
 version = "0.0.0"
-source = "git+https://github.com/loombridge/plugin-kit?rev=03f6c693e9c3a0c191251b13d9e45766efa1d3b3#03f6c693e9c3a0c191251b13d9e45766efa1d3b3"
+source = "git+https://github.com/loombridge/plugin-kit?rev=708af024de58dafbfcb719bc3bf7394032265bc1#708af024de58dafbfcb719bc3bf7394032265bc1"
 
 [[package]]
 name = "memchr"

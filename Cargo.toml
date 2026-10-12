@@ -25,9 +25,9 @@ reagent-cli = { path = "crates/cli" }
 # comes from the same revision; to work on the kit and Reagent at once, patch
 # them to a local checkout (CONTRIBUTING.md, "Working on the kit and Reagent
 # at once") rather than editing these lines.
-lspk-dsp = { git = "https://github.com/loombridge/plugin-kit", rev = "03f6c693e9c3a0c191251b13d9e45766efa1d3b3" }
-lspk-plugin = { git = "https://github.com/loombridge/plugin-kit", rev = "03f6c693e9c3a0c191251b13d9e45766efa1d3b3" }
-lspk-ui = { git = "https://github.com/loombridge/plugin-kit", rev = "03f6c693e9c3a0c191251b13d9e45766efa1d3b3" }
+lspk-dsp = { git = "https://github.com/loombridge/plugin-kit", rev = "708af024de58dafbfcb719bc3bf7394032265bc1" }
+lspk-plugin = { git = "https://github.com/loombridge/plugin-kit", rev = "708af024de58dafbfcb719bc3bf7394032265bc1" }
+lspk-ui = { git = "https://github.com/loombridge/plugin-kit", rev = "708af024de58dafbfcb719bc3bf7394032265bc1" }
 
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }
