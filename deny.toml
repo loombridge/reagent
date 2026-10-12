@@ -2,7 +2,7 @@
 #
 # Reagent is GPL-3.0-or-later, so every dependency must be under a licence
 # that can be combined with it. `cargo xtask deny-selftest` proves this file
-# still rejects an incompatible licence.
+# still rejects an AGPL crate, from the plug-in kit's fixture.
 
 [graph]
 all-features = true
