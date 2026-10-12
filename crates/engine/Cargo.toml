@@ -1,0 +1,15 @@
+[package]
+name = "reagent-engine"
+description = "Reagent's synthesis engine: oscillators, filters, the effects rack, modulation, the arpeggiator and clip sequencer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+lspk-dsp.workspace = true
+
+[lints]
+workspace = true
