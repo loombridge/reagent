@@ -41,7 +41,9 @@ If you have ever decompiled or disassembled Xfer's code, say so in your pull req
    cargo xtask check
    ```
 
-   It runs format, clippy with warnings denied, the tests under cargo-nextest and then the doctests, the layer rules, `cargo deny`, and a self-test that proves `deny.toml` still rejects an incompatible licence.
+   It runs format, clippy with warnings denied, the tests under cargo-nextest and then the doctests, the layer rules, `cargo deny`, and a self-test that proves `deny.toml` still rejects an incompatible licence. Reagent's `cargo xtask` is the plug-in kit's tasks run in this repository, so `cargo xtask validate`, `golden`, `bench` and `bundle` are there too (`cargo xtask help`).
+
+1. If the change moves Reagent's sound, remake the golden renders with `cargo xtask golden --update` and say why in the pull request. If it adds a parameter, run `LSPK_IDS_UPDATE=1 cargo test -p reagent --test ids` and commit `crates/plugin/tests/ids.txt`, which may only be added to. CI's Linux job fails a pull request that makes any benchmark more than 3 % slower than `bench/baseline.json`; when that's intended, update it with `cargo xtask bench --update-baseline --reason "..." --from <counts>` from the counts the job prints, and say why.
 
 ## Working on the plug-in kit and Reagent at once
 
@@ -59,9 +61,20 @@ Reagent depends on the [plug-in kit](https://github.com/loombridge/plugin-kit) b
 
    ```toml
    [patch."https://github.com/loombridge/plugin-kit"]
+   lspk-agent = { path = "plugin-kit/crates/agent" }
+   lspk-commands = { path = "plugin-kit/crates/commands" }
    lspk-dsp = { path = "plugin-kit/crates/dsp" }
+   lspk-mod = { path = "plugin-kit/crates/mod" }
+   lspk-params = { path = "plugin-kit/crates/params" }
    lspk-plugin = { path = "plugin-kit/crates/plugin" }
+   lspk-plugin-agent = { path = "plugin-kit/crates/plugin-agent" }
+   lspk-rt = { path = "plugin-kit/crates/rt" }
+   lspk-standalone = { path = "plugin-kit/crates/standalone" }
+   lspk-test = { path = "plugin-kit/crates/test" }
    lspk-ui = { path = "plugin-kit/crates/ui" }
+   lspk-voice = { path = "plugin-kit/crates/voice" }
+   lspk-wavetable = { path = "plugin-kit/crates/wavetable" }
+   lspk-xtask = { path = "plugin-kit/xtask" }
    ```
 
    Cargo reads it from every checkout below that folder, and it patches only crates that come from the kit's repository. Reagent now builds against your kit checkout, and `cargo xtask check` passes in both repositories as you work. Cargo rewrites `Cargo.lock` to drop the kit's git source while the patch is on; don't commit it in that state.

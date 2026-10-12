@@ -1,6 +1,6 @@
 [package]
 name = "reagent-engine"
-description = "Reagent's synthesis engine: oscillators, filters, the effects rack, modulation, the arpeggiator and clip sequencer."
+description = "Reagent's synthesis engine: oscillators, filters, the mixer and routing, envelopes, LFOs and the modulation matrix, assembled from the plug-in kit."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,14 @@ publish.workspace = true
 
 [dependencies]
 lspk-dsp.workspace = true
+lspk-mod.workspace = true
+lspk-params.workspace = true
+# The processor interface and events, without any format.
+lspk-plugin.workspace = true
+lspk-voice.workspace = true
+lspk-wavetable.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [lints]
 workspace = true

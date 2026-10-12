@@ -1,6 +1,6 @@
 [package]
 name = "reagent"
-description = "Reagent as a plug-in and standalone app."
+description = "Reagent as a plug-in (CLAP, VST3 and Audio Unit v2) and a standalone app, through the plug-in kit."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,10 +8,58 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[lib]
+# The cdylib is the CLAP plug-in (with its VST3 and Audio Unit entry points);
+# the rlib lets the tests reach its types and its entry point, and makes
+# Cargo build the cdylib beside them.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["export"]
+# Its exports (CLAP natively, with VST3 and, on macOS, Audio Unit v2 made from
+# it), with the agent interface, the generic editor and the standalone app. A
+# host that compiles Reagent in, as Beatlayer's native devices do, turns it
+# off and gets the plug-in's types alone.
+export = [
+    "lspk-plugin/clap",
+    "lspk-plugin/vst3",
+    "lspk-plugin/auv2",
+    "dep:lspk-ui",
+    "dep:lspk-plugin-agent",
+    "dep:lspk-standalone",
+]
+
+# The standalone app, which `cargo xtask bundle` lays out beside the
+# plug-in's formats.
+[[bin]]
+name = "reagent-standalone"
+path = "src/main.rs"
+required-features = ["export"]
+
 [dependencies]
+lspk-commands.workspace = true
+lspk-mod.workspace = true
+lspk-params.workspace = true
 lspk-plugin.workspace = true
 reagent-engine.workspace = true
-reagent-ui.workspace = true
+serde_json = "1"
+# The generic editor until Reagent's own interface (R2).
+lspk-ui = { workspace = true, optional = true }
+# The agent interface: its parameters and commands as tools, and its own MCP
+# server, off until the person switches it on.
+lspk-plugin-agent = { workspace = true, optional = true }
+lspk-standalone = { workspace = true, optional = true }
+
+[dev-dependencies]
+lspk-agent.workspace = true
+lspk-rt.workspace = true
+lspk-test.workspace = true
+
+# The benchmark scenarios, timed by `cargo xtask bench` and counted by CI's
+# instruction-count gate.
+[[bench]]
+name = "perf"
+harness = false
 
 [lints]
 workspace = true
