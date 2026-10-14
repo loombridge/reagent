@@ -5,12 +5,13 @@
 //!
 //! Spec rules are cited as `engine-core Rn`.
 
+use lspk_mod::{Polarity, Target};
 use lspk_params::ParamId;
 use lspk_plugin::{Event, OutputEvent};
 use lspk_test::measure::{self, db};
 use lspk_test::render::{Instance, Output, Script, Settings};
 use reagent::Reagent;
-use reagent::params::{BUS, FILTER, OSC, bus, channel, filter, global, id};
+use reagent::params::{BUS, FILTER, OSC, bus, channel, env, env_id, filter, global, id};
 use reagent::patches;
 use reagent_engine::Registry;
 
@@ -176,4 +177,63 @@ fn a_route_back_resets_the_earlier_route_to_main_and_tells_the_host() {
     let block = instance.process(128, &[], &[set(buses[0], 2.0)]);
     assert_eq!(reports(&block.events, &buses), [(buses[1], 0.0)]);
     assert_eq!(instance.values().get(buses[1]), Some(0.0), "Bus 2 to Main");
+}
+
+// Spec: engine-core R10 (with amp envelope off, Env 1 does not scale the
+// voice and the voice lasts until the longest release of any envelope in use).
+#[test]
+fn amp_envelope_switch_off_leaves_voice_unshaped_until_longest_release() {
+    let registry = Registry::new();
+    let cutoff = Target::Param(f(0, filter::CUTOFF));
+    let mut patch = patches::init();
+    patch.params.extend_from_slice(&[
+        (a(channel::OUTPUT), 1.0),
+        (a(channel::AMP_ENV), 0.0),
+        (env_id(0, env::ATTACK), 1.0),
+        (env_id(0, env::DECAY), 40.0),
+        (env_id(0, env::SUSTAIN), 0.0),
+        (env_id(0, env::RELEASE), 20.0),
+        (env_id(1, env::RELEASE), 250.0),
+    ]);
+    patch.routes.push(("env2", cutoff, 0.5, Polarity::Unipolar));
+
+    let mut instance = Instance::<Reagent>::new().expect("an instance");
+    instance
+        .load_state(&patch.state(&registry))
+        .expect("the patch loads");
+    instance
+        .activate(Settings::new(RATE, 128))
+        .expect("activation");
+
+    // Note held for 0.2 s (9_600 frames), total 0.6 s (28_800 frames).
+    let render = instance.render(&Script::new(28_800).note(0, 9_600, 57, 1.0));
+    let left = render.output.channel(0);
+
+    // During the note (0.1 s in), Env 1 has decayed to silence; with the switch
+    // off, the voice plays at full level unshaped by Env 1.
+    let steady = measure::rms(&left[4_800..7_200]);
+    assert!(steady > 0.05, "level is unshaped by Env 1: {steady}");
+
+    // After note off at 0.2 s (9_600 frames), Env 1's 20 ms release ends at
+    // 0.22 s (10_560 frames). Env 2's 250 ms release lasts until 0.45 s (21_600 frames).
+    // At 0.3 s (14_400 frames), the voice is still sounding.
+    let releasing = measure::rms(&left[14_400..16_800]);
+    assert!(
+        releasing > 0.05,
+        "voice continues sounding during Env 2's release: {releasing}"
+    );
+
+    // After Env 2's release finishes, the voice has ended and gone silent.
+    assert!(
+        left[24_000..].iter().all(|&s| s == 0.0),
+        "silent after Env 2 release"
+    );
+    assert!(
+        render.events.iter().any(
+            |e| matches!(e, OutputEvent::NoteEnd { time, .. } if (21_000..=22_500).contains(time))
+        ),
+        "note ended after Env 2 release: {:?}",
+        render.events
+    );
+    assert!(render.sleeps(), "instance sleeps after voice ends");
 }
