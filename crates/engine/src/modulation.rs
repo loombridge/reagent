@@ -108,6 +108,9 @@ fn modulatable(descriptor: &ParamDescriptor) -> bool {
         global::BEND_UP,
         global::BEND_DOWN,
         global::MPE_BEND,
+        global::REFERENCE_PITCH,
+        global::ENV_SCALE,
+        global::LFO_SCALE,
     ];
     matches!(
         descriptor.kind,
@@ -406,6 +409,12 @@ mod tests {
             "a switch"
         );
         assert!(!dest(Target::Param(global::QUALITY)), "a choice");
+        assert!(
+            !dest(Target::Param(global::REFERENCE_PITCH)),
+            "reference pitch"
+        );
+        assert!(!dest(Target::Param(global::ENV_SCALE)), "envelope scale");
+        assert!(!dest(Target::Param(global::LFO_SCALE)), "lfo scale");
         let modulatable = registry
             .space
             .descriptors()
