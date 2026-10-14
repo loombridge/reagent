@@ -15,7 +15,9 @@
 //! milliseconds following `32 s × n⁵` (R70), cutoff in hertz on an
 //! exponential travel (R51).
 
-use lspk_params::{ModuleType, ParamAddress, ParamDescriptor, ParamId, ParamSpace, ParamUnit};
+use lspk_params::{
+    ModuleType, ParamAddress, ParamDescriptor, ParamId, ParamSpace, ParamUnit, gain_to_db,
+};
 
 /// The main oscillators' module type: `Osc A`, `Osc B`, `Osc C`.
 pub const OSC: u8 = 1;
@@ -777,7 +779,8 @@ pub fn filter_module() -> ModuleType {
             "The filtered signal against the dry; 100 % is fully filtered.",
         ))
         .param(
-            ParamDescriptor::gain(n(LEVEL), "Level", 12.0, 0.0)
+            ParamDescriptor::gain(n(LEVEL), "Level", gain_to_db(4.0), 0.0)
+                .power(2)
                 .describe("The filter's output gain."),
         )
         .param(toggle(
@@ -840,7 +843,8 @@ pub fn filter_module() -> ModuleType {
 pub fn bus_module() -> ModuleType {
     ModuleType::new(BUS, "bus", "Bus")
         .param(
-            ParamDescriptor::gain(n(bus::LEVEL), "Level", 12.0, 0.0)
+            ParamDescriptor::gain(n(bus::LEVEL), "Level", gain_to_db(4.0), 0.0)
+                .power(2)
                 .describe("The bus's level, after everything sent to it."),
         )
         .param(choice(
@@ -1065,11 +1069,14 @@ fn globals() -> Vec<ParamDescriptor> {
         })
         .collect();
     all.extend([
-        ParamDescriptor::gain(MAIN_LEVEL, "Main level", 3.0, -9.0)
+        ParamDescriptor::gain(MAIN_LEVEL, "Main level", gain_to_db(2f64.sqrt()), -9.0)
+            .power(2)
             .describe("The level of everything routed to Main."),
-        ParamDescriptor::gain(DRY_LEVEL, "Dry out level", 12.0, 0.0)
+        ParamDescriptor::gain(DRY_LEVEL, "Dry out level", gain_to_db(4.0), 0.0)
+            .power(2)
             .describe("The level of the dry output, which skips every effect."),
-        ParamDescriptor::gain(AMP, "Amp", 20.0 * 2f64.log10(), 0.0)
+        ParamDescriptor::gain(AMP, "Amp", gain_to_db(2.0), 0.0)
+            .linear()
             .describe("Each voice's gain, after its envelope; a common target for velocity."),
         ParamDescriptor::continuous(TUNING, "Main tuning", (-64.0, 64.0), 0.0, ParamUnit::Semitones)
             .describe("Transposes every oscillator."),
@@ -1346,6 +1353,72 @@ mod tests {
         assert_eq!(lfo_scale.min(), 10.0);
         assert_eq!(lfo_scale.max(), 1000.0);
         assert_eq!(lfo_scale.format(100.0), "100 %");
+    }
+
+    // Spec: engine-core rows for Level (filters), Bus 1 and Bus 2 Vol,
+    // Direct Vol, Main Vol and Amp (task T26).
+    fn check_knob_law(param_id: ParamId, law: impl Fn(f64) -> f64, expected_default_gain: f64) {
+        let desc = space()
+            .descriptors()
+            .into_iter()
+            .find(|d| d.id == param_id)
+            .expect("descriptor");
+        assert!(
+            (desc.default - expected_default_gain).abs() < 1e-12,
+            "default gain unchanged"
+        );
+        for n in [0.0, 0.25, 0.5, 1.0] {
+            let gain = desc.denormalize(n);
+            let expected = law(n);
+            assert!(
+                (gain - expected).abs() < 1e-12,
+                "at n={n}, gain {gain} != expected {expected}"
+            );
+            assert!(
+                (desc.normalize(gain) - n).abs() < 1e-12,
+                "normalize at n={n}"
+            );
+        }
+        assert_eq!(desc.format(0.0), "-inf dB");
+    }
+
+    #[test]
+    fn filter_1_level_follows_its_knob_law() {
+        check_knob_law(id(FILTER, 0, filter::LEVEL), |n| (2.0 * n).powi(2), 1.0);
+    }
+
+    #[test]
+    fn filter_2_level_follows_its_knob_law() {
+        check_knob_law(id(FILTER, 1, filter::LEVEL), |n| (2.0 * n).powi(2), 1.0);
+    }
+
+    #[test]
+    fn bus_1_level_follows_its_knob_law() {
+        check_knob_law(id(BUS, 0, bus::LEVEL), |n| (2.0 * n).powi(2), 1.0);
+    }
+
+    #[test]
+    fn bus_2_level_follows_its_knob_law() {
+        check_knob_law(id(BUS, 1, bus::LEVEL), |n| (2.0 * n).powi(2), 1.0);
+    }
+
+    #[test]
+    fn direct_vol_follows_its_knob_law() {
+        check_knob_law(global::DRY_LEVEL, |n| (2.0 * n).powi(2), 1.0);
+    }
+
+    #[test]
+    fn main_vol_follows_its_knob_law() {
+        check_knob_law(
+            global::MAIN_LEVEL,
+            |n| 2f64.sqrt() * n.powi(2),
+            db_to_gain(-9.0),
+        );
+    }
+
+    #[test]
+    fn amp_follows_its_knob_law() {
+        check_knob_law(global::AMP, |n| 2.0 * n, 1.0);
     }
 
     #[test]
