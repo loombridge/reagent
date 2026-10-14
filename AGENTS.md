@@ -17,7 +17,7 @@ The plan isn't published yet; a maintainer gives you the work package and the co
 
 ## Lines not crossed
 
-- No Xfer code, content, trademarks or graphic design, by any route. Never decompile, disassemble or statically analyse Serum or any Xfer binary.
+- No Xfer code, content, trademarks or graphic design, by any route. Never look inside Serum's or any Xfer binary's code, by any tool.
 - Code ported from GPL projects (Surge XT, Vital) stays in Reagent's own crates, with a header comment naming its source, and never goes into the plug-in kit.
 - Every user-facing action is a registered command with a schema, a description, and a permission class, so agents reach every feature through the agent interface.
 - No allocation, lock, or blocking call on an audio thread.
