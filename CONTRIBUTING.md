@@ -12,15 +12,14 @@ Thank you for helping build Reagent. This page explains how a change gets from y
 Reagent matches what Xfer Records' Serum 2 does, not how Serum's code does it. In one line: learn from what Serum 2 shows any user, never from inside its binaries, and never copy Xfer's content. Every contribution, from a person or an agent, keeps to these rules:
 
 - **Learn from what Serum 2 shows any user:** Xfer's public manual, product pages, release notes and changelogs; published reviews, tutorials and walkthrough videos; running a licensed copy and watching what it does; measuring its audio output from patches you made yourself; and presets and wavetables you made yourself, for reading the file formats. Paraphrase; never copy text.
-- **Published notes are allowed, copying from them isn't.** You may read what others have published about Serum's internals, including notes made by decompiling it, such as community write-ups of the preset format. Never copy code, or text verbatim, from those notes or anything they quote: write Reagent's code fresh, from your understanding of what they describe. Name every such source in your pull request, with its URL and what you read it for.
-- **Never look inside Serum:** don't decompile, disassemble or statically analyse Serum or any Xfer binary, by any tool.
+- **Never look inside Serum:** don't open, unpack or analyse the code of Serum or any Xfer binary, by any tool.
 - **Never copy Xfer's content:** no code, manual text, factory presets, wavetables, samples, noise sources, skins, artwork, icons or fonts, in the repository or in Reagent's content. Presets and wavetables you made in Serum 2 stay on your machine; tests generate their own fixtures. Don't commit audio Serum 2 rendered.
 - **Never use Xfer's trademarks as names.** "Serum" never appears in Reagent's interface, preset names or product name. Reagent's modules and features have their own names.
 - **Never copy Serum's graphic design.** Reagent puts the same controls in the same places where function drives it, so a Serum user finds them, but draws its own panels, knobs, colours and layout details.
 - **Open-source synthesisers, within their licences.** Reagent is GPL-3.0-or-later, so its own crates may port code from GPL-3.0 projects such as Surge XT and Vital, with a header comment in each derived file naming the source. That code never goes into the plug-in kit, which is MIT OR Apache-2.0. Their names and branding are their authors'.
 - **Cite your sources.** A change that reproduces Serum 2's behaviour says in its pull request what it rests on: a manual section, an observation of Serum 2 running (with its version and platform), a measurement with its method, or a published note.
 
-If you have ever decompiled or disassembled Xfer's code, say so in your pull request and don't work on the matching subsystem.
+If you have ever studied the inside of Xfer's code, say so in your pull request and don't work on the matching subsystem.
 
 ## Find something to work on
 
