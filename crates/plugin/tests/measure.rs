@@ -387,3 +387,167 @@ fn quality_sets_oversampling_factor_and_latency() {
     assert!(lat_high > 0);
     assert!(lat_ultra > lat_high);
 }
+
+// Spec: engine-core R52 (with key tracking on, cutoff moves one octave per
+// octave, following the pitch of the first of A, B and C with key tracking on,
+// glide included; if none tracks, it follows the played note).
+#[test]
+fn filter_key_tracking_follows_first_key_tracked_oscillator() {
+    let a = |param: u16| id(OSC, 0, param);
+    let b = |param: u16| id(OSC, 1, param);
+    let c = |param: u16| id(OSC, 2, param);
+    let f = |param: u16| id(FILTER, 0, param);
+
+    // 1. With A tracking and at +12 semitones, the cutoff is an octave above the
+    // played-note case.
+    let dry_a12 = steady(&hold(&patches::init(), &[(a(osc::OCTAVE), 1.0)], 60, 0.6));
+    let wet_a_tracking = steady(&hold(
+        &patches::init(),
+        &[
+            (a(osc::OCTAVE), 1.0),
+            (f(filter::ON), 1.0),
+            (f(filter::TYPE), 7.0),
+            (f(filter::CUTOFF), 440.0),
+            (f(filter::KEY_TRACK), 1.0),
+        ],
+        60,
+        0.6,
+    ));
+    let wet_none_tracking = steady(&hold(
+        &patches::init(),
+        &[
+            (a(osc::OCTAVE), 1.0),
+            (a(osc::KEY_TRACK), 0.0),
+            (b(osc::KEY_TRACK), 0.0),
+            (c(osc::KEY_TRACK), 0.0),
+            (f(filter::ON), 1.0),
+            (f(filter::TYPE), 7.0),
+            (f(filter::CUTOFF), 440.0),
+            (f(filter::KEY_TRACK), 1.0),
+        ],
+        60,
+        0.6,
+    ));
+    let h2_freq = hz(72.0) * 2.0;
+    let dry_h2 = measure::tone(&dry_a12, RATE, h2_freq).0;
+    let resp_a_tracking = db(measure::tone(&wet_a_tracking, RATE, h2_freq).0 / dry_h2);
+    let resp_none_tracking = db(measure::tone(&wet_none_tracking, RATE, h2_freq).0 / dry_h2);
+
+    assert!(
+        (resp_a_tracking - resp_none_tracking) > 18.0,
+        "A tracking at +12 st moves cutoff 1 octave higher: tracking={resp_a_tracking} dB, none={resp_none_tracking} dB"
+    );
+
+    // 2. With A not tracking and B tracking, B's pitch counts.
+    let dry_b12 = steady(&hold(
+        &patches::init(),
+        &[
+            (a(channel::ON), 0.0),
+            (a(osc::KEY_TRACK), 0.0),
+            (b(channel::ON), 1.0),
+            (b(channel::OUTPUT), 0.0),
+            (b(osc::KEY_TRACK), 1.0),
+            (b(osc::OCTAVE), 1.0),
+        ],
+        60,
+        0.6,
+    ));
+    let wet_b_tracking_12 = steady(&hold(
+        &patches::init(),
+        &[
+            (a(channel::ON), 0.0),
+            (a(osc::KEY_TRACK), 0.0),
+            (b(channel::ON), 1.0),
+            (b(channel::OUTPUT), 0.0),
+            (b(osc::KEY_TRACK), 1.0),
+            (b(osc::OCTAVE), 1.0),
+            (f(filter::ON), 1.0),
+            (f(filter::TYPE), 7.0),
+            (f(filter::CUTOFF), 440.0),
+            (f(filter::KEY_TRACK), 1.0),
+        ],
+        60,
+        0.6,
+    ));
+    let dry_b_h2 = measure::tone(&dry_b12, RATE, h2_freq).0;
+    let resp_b12 = db(measure::tone(&wet_b_tracking_12, RATE, h2_freq).0 / dry_b_h2);
+    assert!(
+        resp_b12 > -10.0,
+        "with B tracking at +12 st, B's pitch counts (cutoff 880 Hz): resp={resp_b12} dB"
+    );
+
+    // 3. With none tracking, the played note counts.
+    // When none of A, B and C track, A plays 8.18 Hz regardless of key (R5),
+    // but the filter cutoff follows the played note (220 Hz at 48, 440 Hz at 60,
+    // 880 Hz at 72).
+    let none_params = [
+        (a(osc::KEY_TRACK), 0.0),
+        (b(osc::KEY_TRACK), 0.0),
+        (c(osc::KEY_TRACK), 0.0),
+        (f(filter::ON), 1.0),
+        (f(filter::TYPE), 7.0),
+        (f(filter::CUTOFF), 440.0),
+        (f(filter::KEY_TRACK), 1.0),
+    ];
+    let wet_none_48 = steady(&hold(&patches::init(), &none_params, 48, 0.6));
+    let wet_none_60 = steady(&hold(&patches::init(), &none_params, 60, 0.6));
+    let wet_none_72 = steady(&hold(&patches::init(), &none_params, 72, 0.6));
+    let c48 = measure::centroid(&wet_none_48, RATE).unwrap();
+    let c60 = measure::centroid(&wet_none_60, RATE).unwrap();
+    let c72 = measure::centroid(&wet_none_72, RATE).unwrap();
+    assert!(
+        c48 < c60 && c60 < c72,
+        "cutoff follows played note when none tracks: c48={c48}, c60={c60}, c72={c72}"
+    );
+
+    // When filter key tracking is off, cutoff stays fixed and centroid does not change with key:
+    let mut none_kt_off = none_params.to_vec();
+    none_kt_off[6] = (f(filter::KEY_TRACK), 0.0);
+    let off_48 = steady(&hold(&patches::init(), &none_kt_off, 48, 0.6));
+    let off_72 = steady(&hold(&patches::init(), &none_kt_off, 72, 0.6));
+    let c_off_48 = measure::centroid(&off_48, RATE).unwrap();
+    let c_off_72 = measure::centroid(&off_72, RATE).unwrap();
+    assert!(
+        (c_off_48 - c_off_72).abs() < 1e-2,
+        "with filter key tracking off, cutoff is fixed: c48={c_off_48}, c72={c_off_72}"
+    );
+
+    // 4. Glide moves the cutoff with the pitch.
+    // In mono legato with glide, note 48 glides to note 60 over 400 ms.
+    // With A's key tracking off (fixed 8.18 Hz saw input), the rise in the
+    // 440 Hz harmonic is driven entirely by the filter cutoff gliding from
+    // 220 Hz to 440 Hz.
+    let registry = Registry::new();
+    let mut patch = patches::init();
+    patch.params.extend([
+        (a(osc::KEY_TRACK), 0.0),
+        (f(filter::ON), 1.0),
+        (f(filter::TYPE), 7.0),
+        (f(filter::CUTOFF), 440.0),
+        (f(filter::KEY_TRACK), 1.0),
+        (global::MONO, 1.0),
+        (global::LEGATO, 1.0),
+        (global::GLIDE_TIME, 400.0),
+    ]);
+    let mut instance = Instance::<Reagent>::new().expect("an instance");
+    instance.load_state(&patch.state(&registry)).unwrap();
+    instance.activate(Settings::new(RATE, 128)).unwrap();
+    let render = instance
+        .render(
+            &Script::new((0.8 * RATE) as usize)
+                .note_on(0, 48, 1.0)
+                .note_on((0.1 * RATE) as u32, 60, 1.0),
+        )
+        .output;
+    let ch = render.channel(0);
+    let early = &ch[(0.05 * RATE) as usize..(0.09 * RATE) as usize];
+    let mid = &ch[(0.25 * RATE) as usize..(0.35 * RATE) as usize];
+    let late = &ch[(0.65 * RATE) as usize..(0.75 * RATE) as usize];
+    let tone_early = measure::tone(early, RATE, 440.0).0;
+    let tone_mid = measure::tone(mid, RATE, 440.0).0;
+    let tone_late = measure::tone(late, RATE, 440.0).0;
+    assert!(
+        tone_early < tone_mid && tone_mid < tone_late,
+        "glide moves cutoff smoothly: early={tone_early}, mid={tone_mid}, late={tone_late}"
+    );
+}

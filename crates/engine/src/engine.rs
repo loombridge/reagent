@@ -1701,6 +1701,23 @@ impl Synth {
                 let pitch = voices.pitch();
                 let step = voices.pitch_step();
                 let ref_offset = 12.0 * (self.reference / 440.0).log2();
+                // The first of A, B and C with key tracking on, glide
+                // included; if none tracks, it follows the played note (R52).
+                let tracking_osc = self
+                    .osc_params
+                    .iter()
+                    .enumerate()
+                    .find(|(_, p)| p.key_track);
+                let tracking_tune = tracking_osc.map_or(0.0, |(_, p)| p.tune());
+                let tracking_pitch_mods = tracking_osc.map(|(s, _)| {
+                    let p_osc = |param: u16| params::id(OSC, s as u8, param);
+                    [osc::OCTAVE, osc::SEMITONE, osc::FINE, osc::SWEEP]
+                        .map(|m| (m, modulation(&self.modeng, self.values.dest(p_osc(m)))))
+                });
+                let tracking_any_pitch = tracking_pitch_mods
+                    .as_ref()
+                    .is_some_and(|mods| mods.iter().any(|(_, m)| m.is_some()))
+                    || (tracking_osc.is_some() && (tuning_mod.is_some() || self.tuning != 0.0));
                 for j in 0..os_n {
                     let t = j / k;
                     for v in 0..span {
@@ -1710,7 +1727,36 @@ impl Synth {
                             pitch_of(self.values.real(p(filter::CUTOFF), pos), 440.0)
                         });
                         let key = if st.key_track {
-                            pitch[v] + step[v] * t as f32 - 60.0 + ref_offset
+                            let osc_offset = if tracking_any_pitch {
+                                let mut offset = tuning_mod.at(t, v).map_or(self.tuning, |pos| {
+                                    // Main tuning is unbounded (R137).
+                                    -64.0 + 128.0 * pos
+                                });
+                                let mut tune = tracking_tune;
+                                if let (Some((s, _)), Some(mods)) =
+                                    (tracking_osc, &tracking_pitch_mods)
+                                {
+                                    let p_osc = |param: u16| params::id(OSC, s as u8, param);
+                                    for &(m, ref modu) in mods {
+                                        if let Some(pos) = modu.at(t, v) {
+                                            let real = self.values.real(p_osc(m), pos);
+                                            let base_real = self.values.get(p_osc(m)) as f32;
+                                            let (real, scale) = match m {
+                                                osc::OCTAVE => (real.round(), 12.0),
+                                                osc::SEMITONE => (real.round(), 1.0),
+                                                osc::FINE => (real, 0.01),
+                                                _ => (real, 1.0),
+                                            };
+                                            tune += (real - base_real) * scale;
+                                        }
+                                    }
+                                }
+                                offset += tune - tracking_tune;
+                                tracking_tune + offset
+                            } else {
+                                tracking_tune
+                            };
+                            pitch[v] + step[v] * t as f32 + osc_offset - 60.0 + ref_offset
                         } else {
                             0.0
                         };
