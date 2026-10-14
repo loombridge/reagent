@@ -5,11 +5,12 @@
 //!
 //! Spec rules are cited as `engine-core Rn`.
 
+use lspk_mod::{Polarity, Target};
 use lspk_params::{ParamId, db_to_gain};
 use lspk_test::measure::{self, db};
 use lspk_test::render::{Instance, Output, Script, Settings};
 use reagent::Reagent;
-use reagent::params::{FILTER, OSC, channel, filter, global, id, osc};
+use reagent::params::{self, FILTER, LFO, OSC, channel, env, filter, global, id, lfo, osc};
 use reagent::patches::{self, Patch};
 use reagent_engine::Registry;
 
@@ -176,4 +177,213 @@ fn every_patch_plays_at_a_sensible_level() {
             db(peak)
         );
     }
+}
+
+// Spec: engine-core R136 (reference pitch sets A4 for every oscillator and
+// key-tracked filter).
+#[test]
+fn reference_pitch_sets_a4_for_oscillators_and_key_tracked_filters() {
+    let f = |param: u16| id(FILTER, 0, param);
+    // 1. Oscillators: playing A4 (key 69) with different reference pitches.
+    for ref_pitch in [430.0, 432.0, 440.0, 448.0, 450.0] {
+        let note = steady(&hold(
+            &patches::init(),
+            &[(global::REFERENCE_PITCH, ref_pitch)],
+            69,
+            0.6,
+        ));
+        let measured = measure::pitch(&note, RATE).expect("a pitch");
+        assert!(
+            (measured / ref_pitch - 1.0).abs() < 2e-4,
+            "ref_pitch {ref_pitch}: measured {measured} Hz"
+        );
+    }
+
+    // 2. Filters: key tracking on vs off with reference pitch.
+    let dry_440 = steady(&hold(
+        &patches::init(),
+        &[(global::REFERENCE_PITCH, 440.0)],
+        69,
+        0.6,
+    ));
+    let dry_430 = steady(&hold(
+        &patches::init(),
+        &[(global::REFERENCE_PITCH, 430.0)],
+        69,
+        0.6,
+    ));
+
+    // With key tracking on, the filter tracks the oscillator pitch:
+    // the attenuation of harmonic 2 (an octave above fundamental) is identical
+    // at 440 Hz and 430 Hz because both oscillator and filter scale together.
+    let filter_kt_440 = steady(&hold(
+        &patches::init(),
+        &[
+            (global::REFERENCE_PITCH, 440.0),
+            (f(filter::ON), 1.0),
+            (f(filter::TYPE), 7.0), // SVF LP 24
+            (f(filter::CUTOFF), 440.0),
+            (f(filter::KEY_TRACK), 1.0),
+        ],
+        69,
+        0.6,
+    ));
+    let filter_kt_430 = steady(&hold(
+        &patches::init(),
+        &[
+            (global::REFERENCE_PITCH, 430.0),
+            (f(filter::ON), 1.0),
+            (f(filter::TYPE), 7.0),
+            (f(filter::CUTOFF), 440.0),
+            (f(filter::KEY_TRACK), 1.0),
+        ],
+        69,
+        0.6,
+    ));
+    let resp_kt_440 =
+        db(measure::tone(&filter_kt_440, RATE, 880.0).0 / measure::tone(&dry_440, RATE, 880.0).0);
+    let resp_kt_430 =
+        db(measure::tone(&filter_kt_430, RATE, 860.0).0 / measure::tone(&dry_430, RATE, 860.0).0);
+    assert!(
+        (resp_kt_440 - resp_kt_430).abs() < 0.2,
+        "with key tracking, attenuation relative to note harmonics is identical: 440={resp_kt_440}, 430={resp_kt_430}"
+    );
+
+    // With key tracking off, cutoff is fixed in absolute hertz (500 Hz),
+    // so it does not scale with reference pitch.
+    let filter_off_440 = steady(&hold(
+        &patches::init(),
+        &[
+            (global::REFERENCE_PITCH, 440.0),
+            (f(filter::ON), 1.0),
+            (f(filter::TYPE), 7.0),
+            (f(filter::CUTOFF), 500.0),
+            (f(filter::KEY_TRACK), 0.0),
+        ],
+        69,
+        0.6,
+    ));
+    let filter_off_430 = steady(&hold(
+        &patches::init(),
+        &[
+            (global::REFERENCE_PITCH, 430.0),
+            (f(filter::ON), 1.0),
+            (f(filter::TYPE), 7.0),
+            (f(filter::CUTOFF), 500.0),
+            (f(filter::KEY_TRACK), 0.0),
+        ],
+        69,
+        0.6,
+    ));
+    // At 440 Hz (above cutoff), 440 Hz fundamental is attenuated more than 430 Hz fundamental
+    let resp_off_440 =
+        db(measure::tone(&filter_off_440, RATE, 440.0).0 / measure::tone(&dry_440, RATE, 440.0).0);
+    let resp_off_430 =
+        db(measure::tone(&filter_off_430, RATE, 430.0).0 / measure::tone(&dry_430, RATE, 430.0).0);
+    assert!(
+        resp_off_440 < resp_off_430,
+        "fixed cutoff attenuates higher frequency 440 Hz more than 430 Hz: 440={resp_off_440}, 430={resp_off_430}"
+    );
+}
+
+// Spec: engine-core R80 (envelope scale multiplies every envelope's times).
+#[test]
+fn envelope_scale_multiplies_envelope_times() {
+    let e = |param: u16| params::env_id(0, param);
+    let base_params = [
+        (e(env::ATTACK), 100.0),
+        (e(env::HOLD), 0.0),
+        (e(env::DECAY), 100.0),
+        (e(env::SUSTAIN), 0.0),
+    ];
+    let render_scale = |scale: f64| {
+        let mut p = base_params.to_vec();
+        p.push((global::ENV_SCALE, scale));
+        let registry = Registry::new();
+        let mut patch = patches::init();
+        patch.params.extend(p);
+        let mut instance = Instance::<Reagent>::new().expect("instance");
+        instance.load_state(&patch.state(&registry)).unwrap();
+        instance.activate(Settings::new(RATE, 128)).unwrap();
+        instance
+            .render(&Script::new((0.4 * RATE) as usize).note_on(0, 60, 1.0))
+            .output
+    };
+    let out_100 = render_scale(100.0);
+    let out_200 = render_scale(200.0);
+    let out_50 = render_scale(50.0);
+
+    let peak_sample = |out: &Output| {
+        let ch = out.channel(0);
+        ch.iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+            .map(|(i, _)| i)
+            .unwrap()
+    };
+    let peak_100 = peak_sample(&out_100);
+    let peak_200 = peak_sample(&out_200);
+    let peak_50 = peak_sample(&out_50);
+
+    // 100 ms is 4800 samples at 48 kHz.
+    assert!(
+        (peak_100 as f64 - 4800.0).abs() < 256.0,
+        "peak_100: {peak_100}"
+    );
+    assert!(
+        (peak_200 as f64 - 9600.0).abs() < 256.0,
+        "peak_200: {peak_200}"
+    );
+    assert!(
+        (peak_50 as f64 - 2400.0).abs() < 256.0,
+        "peak_50: {peak_50}"
+    );
+}
+
+// Spec: engine-core R97 (LFO scale scales every LFO).
+#[test]
+fn lfo_scale_scales_lfo_period() {
+    let l = |param: u16| params::id(LFO, 0, param);
+    let registry = Registry::new();
+    let mut patch = patches::init();
+    patch
+        .params
+        .extend([(l(lfo::SYNC), 0.0), (l(lfo::RATE), 10.0)]);
+    patch.routes.push((
+        "lfo1",
+        Target::Param(global::TUNING),
+        1.0,
+        Polarity::Bipolar,
+    ));
+
+    let render_lfo_scale = |scale: f64| {
+        let mut p = patch.clone();
+        p.params.push((global::LFO_SCALE, scale));
+        let mut instance = Instance::<Reagent>::new().expect("instance");
+        instance.load_state(&p.state(&registry)).unwrap();
+        instance.activate(Settings::new(RATE, 128)).unwrap();
+        instance
+            .render(&Script::new((0.5 * RATE) as usize).note_on(0, 69, 1.0))
+            .output
+    };
+
+    let out_100 = render_lfo_scale(100.0);
+    let out_200 = render_lfo_scale(200.0);
+    assert!(!out_100.same_bits(&out_200));
+}
+
+// Spec: engine-core R132 (Quality oversampling: Good 1×, High 2×, Ultra 4×).
+#[test]
+fn quality_sets_oversampling_factor_and_latency() {
+    assert_eq!(reagent_engine::engine::quality_factor(0.0), 1);
+    assert_eq!(reagent_engine::engine::quality_factor(1.0), 2);
+    assert_eq!(reagent_engine::engine::quality_factor(2.0), 4);
+
+    let lat_good = reagent_engine::engine::latency(0.0);
+    let lat_high = reagent_engine::engine::latency(1.0);
+    let lat_ultra = reagent_engine::engine::latency(2.0);
+
+    assert_eq!(lat_good, 0);
+    assert!(lat_high > 0);
+    assert!(lat_ultra > lat_high);
 }

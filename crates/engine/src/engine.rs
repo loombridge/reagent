@@ -383,6 +383,8 @@ struct Synth {
     dry_level: f32,
     amp: f32,
     tuning: f32,
+    reference: f32,
+    env_scale: f64,
     /// Whether some channel in use has its amp envelope off, so a voice
     /// lasts until every envelope ends (R10).
     needs_all_envs: bool,
@@ -590,6 +592,8 @@ impl Engine {
             dry_level: 1.0,
             amp: 1.0,
             tuning: 0.0,
+            reference: 440.0,
+            env_scale: 1.0,
             needs_all_envs: false,
             env_buf: (0..ENVELOPES).map(|_| chunk()).collect(),
             lfo_buf: (0..LFOS).map(|_| chunk()).collect(),
@@ -906,7 +910,7 @@ impl Synth {
                     // The oscillator's own level fades without clicks; a
                     // modulated level is applied in the mixer instead.
                     level: f32_of(p(channel::LEVEL)),
-                    reference: 440.0,
+                    reference: self.reference,
                 };
                 self.osc_params[s] = params;
                 let copies = (v.get(p(osc::UNISON)).round() as usize).clamp(1, MAX_COPIES);
@@ -1082,6 +1086,28 @@ impl Synth {
                     f.set_sample_rate(os_rate);
                 }
             }
+            let reference = f32_of(global::REFERENCE_PITCH);
+            if reference != self.reference {
+                self.reference = reference;
+                for s in 0..OSCILLATORS {
+                    self.osc_params[s].reference = reference;
+                }
+                for unit in self.units.iter_mut().flatten() {
+                    unit.osc.params_mut().reference = reference;
+                }
+            }
+            let env_scale = f64::from(f32_of(global::ENV_SCALE)) / 100.0;
+            if env_scale != self.env_scale {
+                self.env_scale = env_scale;
+                let timing = Timing::new(self.rate)
+                    .with_tempo(self.transport.tempo)
+                    .with_scale(env_scale);
+                for env in &mut self.envs {
+                    env.set_timing(timing);
+                }
+            }
+            let lfo_scale = f32_of(global::LFO_SCALE);
+            self.transport.scale = lspk_dsp::lfo::Scale::Percent(lfo_scale);
         }
         if dirty & dirty::VOICE != 0 {
             let steal = match v.get(global::STEAL).round() as i64 {
@@ -1674,6 +1700,7 @@ impl Synth {
                 let cutoff_mod = modulation(&self.modeng, self.values.dest(p(filter::CUTOFF)));
                 let pitch = voices.pitch();
                 let step = voices.pitch_step();
+                let ref_offset = 12.0 * (self.reference / 440.0).log2();
                 for j in 0..os_n {
                     let t = j / k;
                     for v in 0..span {
@@ -1683,7 +1710,7 @@ impl Synth {
                             pitch_of(self.values.real(p(filter::CUTOFF), pos), 440.0)
                         });
                         let key = if st.key_track {
-                            pitch[v] + step[v] * t as f32 - 60.0
+                            pitch[v] + step[v] * t as f32 - 60.0 + ref_offset
                         } else {
                             0.0
                         };

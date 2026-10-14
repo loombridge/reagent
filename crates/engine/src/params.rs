@@ -272,6 +272,12 @@ pub mod global {
     pub const MPE_BEND: ParamId = ParamId(33);
     /// Velocity legato (R101).
     pub const VELOCITY_LEGATO: ParamId = ParamId(34);
+    /// Reference pitch: frequency of A4, 430 to 450 Hz in whole hertz (R136).
+    pub const REFERENCE_PITCH: ParamId = ParamId(35);
+    /// Envelope scale: multiplies every envelope's times, 10 % to 1000 % (R80).
+    pub const ENV_SCALE: ParamId = ParamId(36);
+    /// LFO scale: scales every LFO, 10 % to 1000 % (R97).
+    pub const LFO_SCALE: ParamId = ParamId(37);
 }
 
 /// The oscillators' instance names.
@@ -1112,6 +1118,30 @@ fn globals() -> Vec<ParamDescriptor> {
             .describe("A note's full pitch bend with MPE on."),
         ParamDescriptor::toggle(VELOCITY_LEGATO, "Velocity legato", false)
             .describe("Whether a legato note updates its voice's velocity."),
+        ParamDescriptor::integer(
+            REFERENCE_PITCH,
+            "Reference pitch",
+            (430, 450),
+            440,
+            ParamUnit::Hertz,
+        )
+        .describe("The frequency of A4, applied to every oscillator and key-tracked filter."),
+        ParamDescriptor::continuous(
+            ENV_SCALE,
+            "Envelope scale",
+            (10.0, 1000.0),
+            100.0,
+            ParamUnit::Percent,
+        )
+        .describe("Multiplies every envelope's times; 100 % leaves them unchanged."),
+        ParamDescriptor::continuous(
+            LFO_SCALE,
+            "LFO scale",
+            (10.0, 1000.0),
+            100.0,
+            ParamUnit::Percent,
+        )
+        .describe("Scales every LFO; 100 % leaves them unchanged."),
     ]);
     all
 }
@@ -1277,6 +1307,45 @@ mod tests {
         assert!((default(global::AMP) - 1.0).abs() < 1e-12);
         assert_eq!(default(global::BEND_UP), 2.0);
         assert_eq!(default(global::BEND_DOWN), -2.0);
+        assert_eq!(default(global::REFERENCE_PITCH), 440.0);
+        assert_eq!(default(global::ENV_SCALE), 100.0);
+        assert_eq!(default(global::LFO_SCALE), 100.0);
+    }
+
+    // Spec: engine-core R80 (envelope scale 10 % to 1000 %, default 100 %),
+    // R97 (LFO scale 10 % to 1000 %, default 100 %), R132 (quality Good,
+    // High, Ultra; default High), R136 (reference pitch 430 to 450 Hz,
+    // default 440).
+    #[test]
+    fn global_settings_have_specified_ranges_and_defaults() {
+        let descriptors = space().descriptors();
+        let find = |id: ParamId| descriptors.iter().find(|d| d.id == id).expect("param");
+
+        let quality = find(global::QUALITY);
+        assert_eq!(quality.name, "Quality");
+        assert_eq!(QUALITIES[quality.default as usize], "High");
+
+        let ref_pitch = find(global::REFERENCE_PITCH);
+        assert_eq!(ref_pitch.name, "Reference pitch");
+        assert_eq!(ref_pitch.default, 440.0);
+        assert_eq!(ref_pitch.min(), 430.0);
+        assert_eq!(ref_pitch.max(), 450.0);
+        assert!(ref_pitch.is_stepped());
+        assert_eq!(ref_pitch.format(440.0), "440 Hz");
+
+        let env_scale = find(global::ENV_SCALE);
+        assert_eq!(env_scale.name, "Envelope scale");
+        assert_eq!(env_scale.default, 100.0);
+        assert_eq!(env_scale.min(), 10.0);
+        assert_eq!(env_scale.max(), 1000.0);
+        assert_eq!(env_scale.format(100.0), "100 %");
+
+        let lfo_scale = find(global::LFO_SCALE);
+        assert_eq!(lfo_scale.name, "LFO scale");
+        assert_eq!(lfo_scale.default, 100.0);
+        assert_eq!(lfo_scale.min(), 10.0);
+        assert_eq!(lfo_scale.max(), 1000.0);
+        assert_eq!(lfo_scale.format(100.0), "100 %");
     }
 
     #[test]
