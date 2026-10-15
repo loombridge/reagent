@@ -32,6 +32,14 @@
       "frames": 72000,
       "bits": 24,
       "render_hash": "fnv1a64:fc52703c3520e7e7"
+    },
+    "unison16": {
+      "made_on": "macos-aarch64",
+      "sample_rate": 48000,
+      "channels": 2,
+      "frames": 72000,
+      "bits": 24,
+      "render_hash": "fnv1a64:f6a74f93923201ee"
     }
   }
 }

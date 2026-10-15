@@ -131,6 +131,45 @@ pub fn supersaw() -> Patch {
     }
 }
 
+/// The plan's three-oscillator class: oscillators A, B and C, each sixteen
+/// unison copies, an octave apart, through the same bright low-pass filter.
+/// The heaviest patch the reference suite plays, and the one unison's CPU
+/// shows in.
+#[must_use]
+pub fn unison16() -> Patch {
+    Patch {
+        name: "unison16",
+        params: vec![
+            (osc_param(0, osc::UNISON), 16.0),
+            (osc_param(0, osc::DETUNE), 0.3),
+            (osc_param(0, osc::DETUNE_LAW), 1.0),
+            (osc_param(0, channel::LEVEL), 70.0),
+            (osc_param(1, channel::ON), 1.0),
+            (osc_param(1, channel::OUTPUT), 0.0),
+            (osc_param(1, osc::OCTAVE), -1.0),
+            (osc_param(1, osc::UNISON), 16.0),
+            (osc_param(1, osc::DETUNE), 0.3),
+            (osc_param(1, osc::DETUNE_LAW), 1.0),
+            (osc_param(1, channel::LEVEL), 50.0),
+            (osc_param(2, channel::ON), 1.0),
+            (osc_param(2, channel::OUTPUT), 0.0),
+            (osc_param(2, osc::OCTAVE), -2.0),
+            (osc_param(2, osc::UNISON), 16.0),
+            (osc_param(2, osc::DETUNE), 0.3),
+            (osc_param(2, osc::DETUNE_LAW), 1.0),
+            (osc_param(2, channel::LEVEL), 40.0),
+            (filter_param(0, filter::ON), 1.0),
+            // SVF LP 12.
+            (filter_param(0, filter::TYPE), 5.0),
+            (filter_param(0, filter::CUTOFF), 5000.0),
+            (filter_param(0, filter::RESONANCE), 15.0),
+            (params::env_id(0, env::ATTACK), 5.0),
+            (params::env_id(0, env::RELEASE), 300.0),
+        ],
+        routes: Vec::new(),
+    }
+}
+
 /// A bass: a saw and a square an octave down through a driven 24 dB
 /// ladder, Env 2 sweeping the cutoff down at each note.
 #[must_use]
@@ -204,6 +243,6 @@ pub fn pad() -> Patch {
 
 /// The patches the benchmarks and golden renders play.
 #[must_use]
-pub fn all() -> [Patch; 4] {
-    [init(), supersaw(), bass(), pad()]
+pub fn all() -> [Patch; 5] {
+    [init(), supersaw(), unison16(), bass(), pad()]
 }

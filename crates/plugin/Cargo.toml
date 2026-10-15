@@ -65,5 +65,13 @@ lspk-test.workspace = true
 name = "perf"
 harness = false
 
+# The plan's worst-case render, ten minutes at 32-frame blocks. Ten minutes
+# of audio under Callgrind would not finish, so this is not one of the
+# `perf` benchmarks CI counts; it is the timing harness for the reference
+# machines, run in release.
+[[bench]]
+name = "soak"
+harness = false
+
 [lints]
 workspace = true

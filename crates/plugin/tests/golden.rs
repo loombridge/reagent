@@ -61,7 +61,7 @@ fn golden_renders_null_against_their_references() {
 fn the_golden_script_renders_the_same_at_every_block_size() {
     // The patches with unison and with modulation, which have the most
     // that could depend on how a block splits.
-    for patch in [patches::supersaw(), patches::pad()] {
+    for patch in [patches::supersaw(), patches::unison16(), patches::pad()] {
         let invariance = block_invariance(&BLOCK_SIZES, |block| render(&patch, block));
         assert!(invariance.is_exact(), "{}: {invariance:?}", patch.name);
     }
