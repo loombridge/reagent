@@ -7,13 +7,14 @@
 
 use lspk_mod::{Polarity, Target};
 use lspk_params::ParamId;
-use lspk_plugin::Event;
+use lspk_plugin::{Event, Plugin};
 use lspk_test::measure::{self, db};
 use lspk_test::render::{Instance, Output, Script, Settings};
-use reagent::params::{OSC, channel, global, id, osc};
+use reagent::params::{FILTER, OSC, channel, filter, global, id, osc};
 use reagent::patches::{self, Patch};
-use reagent::{Reagent, space};
+use reagent::{APPLY_MACROS, Reagent, SET_NOTE_CURVE, SWAP_MACROS, space};
 use reagent_engine::Registry;
+use serde_json::json;
 
 lspk_rt::install_trap!();
 
@@ -217,4 +218,298 @@ fn the_audio_thread_stays_off_the_heap_with_routes_and_unison() {
             }
         }
     }
+}
+
+/// The velocity curve's drawn graph: full velocity to half the travel.
+fn half_velocity_curve() -> serde_json::Value {
+    json!([{ "x": 0.0, "y": 0.0 }, { "x": 1.0, "y": 0.5 }])
+}
+
+// Spec: engine-core R103 to R105 (a route moves its destination; the mod
+// wheel is a source of section 12).
+#[test]
+fn the_mod_wheel_sweeps_a_cutoff() {
+    let cutoff = Target::Param(id(FILTER, 0, filter::CUTOFF));
+    let patch = Patch {
+        name: "mod-wheel",
+        params: vec![
+            (id(FILTER, 0, filter::ON), 1.0),
+            (id(FILTER, 0, filter::CUTOFF), 200.0),
+        ],
+        routes: vec![("mod_wheel", cutoff, 0.8, Polarity::Unipolar)],
+    };
+    let brightness = |wheel: u8| {
+        let script = Script::new(24_000)
+            .event(Event::Midi {
+                time: 0,
+                port: 0,
+                data: [0xB0, 1, wheel],
+            })
+            .note_on(0, 57, 1.0);
+        let output = play(&patch, &script);
+        measure::centroid(&output.channel(0)[4_800..14_400], RATE).expect("a centroid")
+    };
+    let (low, high) = (brightness(0), brightness(127));
+    assert!(
+        high > low * 2.0,
+        "the wheel opens the filter: {low} Hz at 0, {high} Hz at 127"
+    );
+}
+
+// Spec: engine-core R99 (the velocity curve maps note-on velocity through
+// its drawn graph onto the velocity source).
+#[test]
+fn a_drawn_velocity_curve_maps_velocity_onto_its_travel() {
+    let level = Target::Param(id(OSC, 0, channel::LEVEL));
+    let patch = Patch {
+        name: "velocity-curve",
+        params: vec![(id(OSC, 0, channel::LEVEL), 0.0)],
+        routes: vec![("velocity", level, 1.0, Polarity::Unipolar)],
+    };
+    let loud = play(&patch, &Script::new(14_400).note_on(0, 57, 1.0));
+    let mut curved = instance(&patch, 128);
+    curved
+        .plugin_mut()
+        .run_command(
+            SET_NOTE_CURVE,
+            &json!({ "which": "velocity", "points": half_velocity_curve() }),
+        )
+        .expect("the curve draws");
+    let quiet = curved
+        .render(&Script::new(14_400).note_on(0, 57, 1.0))
+        .output;
+    let ratio =
+        db(measure::rms(&loud.channel(0)[4_800..]) / measure::rms(&quiet.channel(0)[4_800..]));
+    assert!((ratio - 12.04).abs() < 0.2, "half the travel is {ratio} dB");
+}
+
+// Spec: engine-core R100 (with Glide curve on, a note played while another
+// is held moves the curve's output to the new value over the glide time).
+#[test]
+fn the_key_curve_glides_a_legato_note() {
+    let level = Target::Param(id(OSC, 0, channel::LEVEL));
+    let patch = |glide: f64| Patch {
+        name: "key-glide",
+        params: vec![
+            (global::MONO, 1.0),
+            (global::LEGATO, 1.0),
+            (global::GLIDE_TIME, 500.0),
+            (global::CURVE_GLIDE, glide),
+            (id(OSC, 0, channel::LEVEL), 0.0),
+        ],
+        routes: vec![("key", level, 1.0, Polarity::Unipolar)],
+    };
+    let script = || {
+        Script::new(38_400)
+            .note_on(0, 48, 1.0)
+            .note_on(4_800, 72, 1.0)
+    };
+    let rise = |glide: f64| {
+        let output = play(&patch(glide), &script());
+        let left = output.channel(0);
+        db(measure::rms(&left[28_900..33_700]) / measure::rms(&left[4_900..9_700]))
+    };
+    let gliding = rise(1.0);
+    assert!(gliding > 4.0, "the key curve glides up by {gliding} dB");
+    let stepped = rise(0.0);
+    assert!(
+        stepped.abs() < 1.0,
+        "without the glide the curve steps by {stepped} dB"
+    );
+}
+
+// Spec: engine-core R101 (Velocity legato decides whether a legato note
+// updates the velocity sources).
+#[test]
+fn velocity_legato_updates_the_velocity_source() {
+    let level = Target::Param(id(OSC, 0, channel::LEVEL));
+    let patch = |legato: f64| Patch {
+        name: "velocity-legato",
+        params: vec![
+            (global::MONO, 1.0),
+            (global::LEGATO, 1.0),
+            (global::VELOCITY_LEGATO, legato),
+            (id(OSC, 0, channel::LEVEL), 0.0),
+        ],
+        routes: vec![("velocity", level, 1.0, Polarity::Unipolar)],
+    };
+    let script = || {
+        Script::new(19_200)
+            .note_on(0, 48, 1.0)
+            .note_on(9_600, 60, 0.25)
+    };
+    let change = |legato: f64| {
+        let output = play(&patch(legato), &script());
+        let left = output.channel(0);
+        db(measure::rms(&left[10_000..14_800]) / measure::rms(&left[4_800..9_600]))
+    };
+    let kept = change(0.0);
+    assert!(kept.abs() < 1.0, "off, the velocity stays: {kept} dB");
+    let moved = change(1.0);
+    assert!(
+        (moved + 24.08).abs() < 0.5,
+        "on, a quarter velocity leaves a quarter of the level: {moved} dB"
+    );
+}
+
+// Spec: engine-core R103 (a route with an aux is scaled by it), R114 (a
+// macro is an aux source).
+#[test]
+fn a_macro_scales_a_route() {
+    let level = Target::Param(id(OSC, 0, channel::LEVEL));
+    let patch = Patch {
+        name: "macro-aux",
+        params: vec![(id(OSC, 0, channel::LEVEL), 0.0)],
+        routes: vec![("constant", level, 1.0, Polarity::Unipolar)],
+    };
+    let rms = |macro_value: f64| {
+        let mut instance = instance(&patch, 128);
+        instance
+            .plugin_mut()
+            .run_command(
+                "mod.set_aux",
+                &json!({ "slot": 0, "source": "macro1", "invert": false }),
+            )
+            .expect("the aux sets");
+        let script = Script::new(14_400)
+            .param(0, global::macro_id(0), macro_value)
+            .note_on(0, 57, 1.0);
+        measure::rms(&instance.render(&script).output.channel(0)[4_800..])
+    };
+    assert_eq!(rms(0.0), 0.0, "a macro at 0 leaves the route at 0");
+    let ratio = db(rms(100.0) / rms(50.0));
+    assert!((ratio - 12.04).abs() < 0.2, "half the macro: {ratio} dB");
+}
+
+// Spec: engine-core R115 (Apply and Delete adds each macro's current offset
+// into the parameters it drives, then removes every macro route).
+#[test]
+fn the_apply_macros_command_bakes_the_offsets() {
+    let registry = Registry::new();
+    let level = id(OSC, 0, channel::LEVEL);
+    let cutoff = Target::Param(id(FILTER, 0, filter::CUTOFF));
+    let patch = Patch {
+        name: "apply",
+        params: vec![(level, 0.0), (global::macro_id(0), 50.0)],
+        routes: vec![
+            ("macro1", Target::Param(level), 0.5, Polarity::Unipolar),
+            ("lfo1", cutoff, 0.5, Polarity::Unipolar),
+        ],
+    };
+    let mut instance = Instance::<Reagent>::new().expect("an instance");
+    instance
+        .load_state(&patch.state(&registry))
+        .expect("the patch loads");
+    let applied = instance
+        .plugin_mut()
+        .run_command(APPLY_MACROS, &serde_json::Value::Null)
+        .expect("the macros apply");
+    assert_eq!(applied["removed"], 1);
+    assert_eq!(applied["parameters"], 1);
+    assert_eq!(
+        instance.host().param(level),
+        Some(25.0),
+        "half of a half-amount route moves the level a quarter of the way"
+    );
+    let routes = instance
+        .plugin_mut()
+        .run_command("mod.list", &serde_json::Value::Null)
+        .expect("the list");
+    assert_eq!(
+        routes[0]["source"], "lfo1",
+        "the LFO's route stays: {routes}"
+    );
+    assert_eq!(routes.as_array().expect("a list").len(), 1);
+}
+
+// Spec: engine-core R116 (swapping two macros swaps their routes).
+#[test]
+fn the_swap_macros_command_moves_their_routes() {
+    let registry = Registry::new();
+    let patch = Patch {
+        name: "swap",
+        params: Vec::new(),
+        routes: vec![
+            (
+                "macro1",
+                Target::Param(id(OSC, 0, channel::LEVEL)),
+                0.5,
+                Polarity::Unipolar,
+            ),
+            (
+                "macro2",
+                Target::Param(id(FILTER, 0, filter::CUTOFF)),
+                0.5,
+                Polarity::Unipolar,
+            ),
+        ],
+    };
+    let mut instance = Instance::<Reagent>::new().expect("an instance");
+    instance
+        .load_state(&patch.state(&registry))
+        .expect("the patch loads");
+    let swapped = instance
+        .plugin_mut()
+        .run_command(SWAP_MACROS, &json!({ "first": 1, "second": 2 }))
+        .expect("the macros swap");
+    assert_eq!(swapped["swapped"], 2);
+    let routes = instance
+        .plugin_mut()
+        .run_command("mod.list", &serde_json::Value::Null)
+        .expect("the list");
+    let sources: Vec<&str> = routes
+        .as_array()
+        .expect("a list")
+        .iter()
+        .map(|r| r["source"].as_str().expect("a source"))
+        .collect();
+    assert_eq!(sources, ["macro2", "macro1"]);
+    // A macro that isn't there is refused.
+    assert!(
+        instance
+            .plugin_mut()
+            .run_command(SWAP_MACROS, &json!({ "first": 1, "second": 9 }))
+            .is_err()
+    );
+}
+
+// Spec: engine-core R99 (the curves), R114 (a macro route): both stay
+// through the patch state.
+#[test]
+fn a_patch_state_round_trips_the_macros_and_the_curves() {
+    let registry = Registry::new();
+    let patch = Patch {
+        name: "state",
+        params: Vec::new(),
+        routes: vec![(
+            "macro3",
+            Target::Param(id(OSC, 0, channel::LEVEL)),
+            0.5,
+            Polarity::Unipolar,
+        )],
+    };
+    let mut instance = Instance::<Reagent>::new().expect("an instance");
+    instance
+        .load_state(&patch.state(&registry))
+        .expect("the patch loads");
+    instance
+        .plugin_mut()
+        .run_command(
+            SET_NOTE_CURVE,
+            &json!({ "which": "velocity", "points": half_velocity_curve() }),
+        )
+        .expect("the curve draws");
+    let state = instance.save_state();
+    let before = instance.plugin().matrix().clone();
+    // Something else, then the state back.
+    instance
+        .plugin_mut()
+        .run_command(SWAP_MACROS, &json!({ "first": 3, "second": 8 }))
+        .expect("the macros swap");
+    instance.load_state(&state).expect("the state loads");
+    assert_eq!(instance.plugin().matrix(), &before);
+    assert_eq!(
+        instance.plugin().matrix().note_curves.velocity.value(1.0),
+        0.5
+    );
 }
