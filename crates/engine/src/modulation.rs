@@ -14,14 +14,27 @@
 //! module, each LFO's sixteen point-modulation buses, the macros (whose
 //! routes feed back into the matrix) and every slot's amount and output
 //! (engine-core R111). Switches and choices aren't modulated.
+//!
+//! The velocity and key curves live with the matrix, the kit's
+//! [`NoteCurves`](lspk_mod::NoteCurves): the drawn shapes a note's velocity
+//! and number pass through, their glide and velocity legato (engine-core
+//! section 11). [`set_note_curve`] redraws one; [`save`] and [`load`] keep
+//! them beside the slots.
+//!
+//! [`apply_macros`] and [`swap_macros`] are the macros' two operations
+//! (R115, R116). Applying bakes every macro route's current offset into the
+//! parameter it drives and then removes the routes; swapping exchanges two
+//! macros' routes.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use lspk_dsp::lfo::{Point, Shape};
 use lspk_mod::commands::SlotView;
+use lspk_mod::curve::{CurvePoint, diagonal};
 use lspk_mod::{
-    Config, Curve, DestId, DestinationInfo, Destinations, Matrix, Program, SourceId, Sources,
-    Standard, Target,
+    Config, Curve, DestId, DestinationInfo, Destinations, Matrix, Polarity, Program, SourceId,
+    Sources, Standard, Target,
 };
 use lspk_params::{ParamAddress, ParamDescriptor, ParamId, ParamKind, ParamSpace};
 use serde::{Deserialize, Serialize};
@@ -195,6 +208,51 @@ pub fn destinations(space: &ParamSpace, sources: &Sources) -> Destinations {
     dests
 }
 
+/// Which of the two note curves (engine-core section 11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteCurve {
+    /// Maps note-on velocity onto the velocity source (R99).
+    Velocity,
+    /// Maps the note number onto the key source (R99).
+    Key,
+}
+
+/// `shape` as the points a patch saves.
+fn shape_points(shape: &Shape) -> Vec<CurvePoint> {
+    shape
+        .points()
+        .iter()
+        .map(|p| CurvePoint {
+            x: p.x,
+            y: p.y,
+            curve: p.curve,
+        })
+        .collect()
+}
+
+/// The shape `points` draw; no points is the diagonal, the init curve.
+fn shape_of(points: &[CurvePoint]) -> Shape {
+    if points.is_empty() {
+        return diagonal();
+    }
+    let points: Vec<Point> = points
+        .iter()
+        .map(|p| Point::new(p.x, p.y).curve(p.curve))
+        .collect();
+    Shape::new(&points)
+}
+
+/// Sets `matrix`'s velocity or key curve to a drawn shape through `points`
+/// (engine-core R99), as the curve's editor draws it; no points leave the
+/// diagonal (engine-core R99, Init resets either to the diagonal).
+pub fn set_note_curve(matrix: &mut Matrix, which: NoteCurve, points: &[CurvePoint]) {
+    let shape = shape_of(points);
+    match which {
+        NoteCurve::Velocity => matrix.note_curves.velocity = shape,
+        NoteCurve::Key => matrix.note_curves.key = shape,
+    }
+}
+
 /// What the audio thread renders only when a route reads it, as bits: LFO
 /// `l` is bit `l`, audio source `a` is bit `16 + a`. The main thread stores
 /// the union of the old and new programs' needs before it sends a new
@@ -290,6 +348,161 @@ impl Registry {
     }
 }
 
+/// Source `m` (0 to 7) of the macros, if it exists.
+fn macro_source(sources: &Sources, m: usize) -> Option<SourceId> {
+    (m < MACROS)
+        .then(|| sources.find(&format!("macro{}", m + 1)))
+        .flatten()
+}
+
+/// The macro number of `id`, if it's a macro (0 to 7).
+fn macro_number(sources: &Sources, id: SourceId) -> Option<usize> {
+    (0..MACROS).find(|&m| macro_source(sources, m) == Some(id))
+}
+
+/// What applying the macros changed (engine-core R115).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MacroApply {
+    /// Each parameter a macro drove, with its new value in its own units.
+    pub params: Vec<(ParamId, f64)>,
+    /// How many routes were removed.
+    pub removed: usize,
+}
+
+/// Applies and deletes the macros (engine-core R115): adds each macro
+/// route's current offset into the parameter it drives, then removes every
+/// route whose source is a macro. `macro_value` is a macro's knob, 0 to 1,
+/// and `value_of` reads a parameter's value in its own units.
+///
+/// A route's offset is the macro's own contribution: its source curve at the
+/// macro's value, through the route's polarity, amount and output. A route's
+/// auxiliary source isn't baked, and a destination that isn't a parameter
+/// (an LFO point bus) has no value to add into; either way the route is
+/// still removed.
+pub fn apply_macros(
+    matrix: &mut Matrix,
+    space: &ParamSpace,
+    sources: &Sources,
+    macro_value: &dyn Fn(usize) -> f32,
+    value_of: &dyn Fn(ParamId) -> Option<f64>,
+) -> MacroApply {
+    // What every macro route adds now, added up by destination (engine-core
+    // R108: routes to one destination add).
+    let mut offsets: Vec<(Target, f32)> = Vec::new();
+    let mut routes: Vec<usize> = Vec::new();
+    for (n, slot) in matrix.slots().iter().enumerate() {
+        let Some(source) = slot.source else { continue };
+        let Some(m) = macro_number(sources, source) else {
+            continue;
+        };
+        routes.push(n);
+        if slot.bypass {
+            continue;
+        }
+        let Some(destination) = slot.destination else {
+            continue;
+        };
+        let value = slot.source_curve.value(macro_value(m));
+        let value = if slot.polarity == Polarity::Bipolar {
+            2.0 * value - 1.0
+        } else {
+            value
+        };
+        let offset = value * slot.amount * slot.output;
+        match offsets.iter_mut().find(|(t, _)| *t == destination) {
+            Some((_, sum)) => *sum += offset,
+            None => offsets.push((destination, offset)),
+        }
+    }
+    // Every new value, from the state before the routes go. A slot amount or
+    // output is part of the matrix; everything else is a parameter.
+    let descriptors = space.descriptors();
+    let mut params: Vec<(ParamId, f64)> = Vec::new();
+    let mut fields: Vec<(usize, bool, f32)> = Vec::new();
+    for (destination, offset) in offsets {
+        if offset == 0.0 {
+            continue;
+        }
+        let Target::Param(id) = destination else {
+            continue;
+        };
+        if let Some(address) = ParamAddress::of(id)
+            && address.module == MATRIX
+            && let Ok(slot) = matrix.slot(usize::from(address.instance))
+        {
+            let output = address.param == 1;
+            let value = if output { slot.output } else { slot.amount } + offset;
+            let value = if output {
+                value.clamp(0.0, 1.0)
+            } else {
+                value.clamp(-1.0, 1.0)
+            };
+            fields.push((usize::from(address.instance), output, value));
+            continue;
+        }
+        let Some(descriptor) = descriptors.iter().find(|d| d.id == id) else {
+            continue;
+        };
+        let Some(current) = value_of(id) else {
+            continue;
+        };
+        let position = (descriptor.normalize(current) + f64::from(offset)).clamp(0.0, 1.0);
+        params.push((id, descriptor.denormalize(position)));
+    }
+    let removed = routes.len();
+    for n in routes {
+        let _ = matrix.remove(n);
+    }
+    for (slot, output, value) in fields {
+        if let Ok(slot) = matrix.slot_mut(slot) {
+            if output {
+                slot.output = value;
+            } else {
+                slot.amount = value;
+            }
+        }
+    }
+    MacroApply { params, removed }
+}
+
+/// Swaps two macros' routes (engine-core R116): every route whose source or
+/// aux is macro `a` (0 to 7) takes macro `b` and the other way round, the
+/// macros' own values staying put. Returns how many slots changed.
+#[must_use]
+pub fn swap_macros(matrix: &mut Matrix, sources: &Sources, a: usize, b: usize) -> usize {
+    let (Some(a), Some(b)) = (macro_source(sources, a), macro_source(sources, b)) else {
+        return 0;
+    };
+    let swap = |source: Option<SourceId>| match source {
+        Some(s) if s == a => Some(b),
+        Some(s) if s == b => Some(a),
+        other => other,
+    };
+    let mut changed = 0;
+    for n in 0..lspk_mod::SLOTS {
+        let Ok(slot) = matrix.slot_mut(n) else {
+            continue;
+        };
+        let (source, aux) = (slot.source, slot.aux);
+        slot.source = swap(source);
+        slot.aux = swap(aux);
+        changed += usize::from(slot.source != source || slot.aux != aux);
+    }
+    changed
+}
+
+/// The velocity and key curves as a patch saves them (engine-core section
+/// 11): the points each draws, empty for the diagonal.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SavedNoteCurves {
+    /// The velocity curve's points.
+    #[serde(default)]
+    pub velocity: Vec<CurvePoint>,
+    /// The key curve's points.
+    #[serde(default)]
+    pub key: Vec<CurvePoint>,
+}
+
 /// The matrix as a patch saves it: version 1 of Reagent's own state, the
 /// slots in use as the kit's `mod.list` describes them.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -298,6 +511,9 @@ pub struct SavedMatrix {
     pub version: u32,
     /// The slots in use.
     pub slots: Vec<SlotView>,
+    /// The velocity and key curves.
+    #[serde(default)]
+    pub note_curves: SavedNoteCurves,
     /// Whether the matrix is locked.
     #[serde(default)]
     pub locked: bool,
@@ -309,6 +525,7 @@ impl Default for SavedMatrix {
         Self {
             version: 1,
             slots: Vec::new(),
+            note_curves: SavedNoteCurves::default(),
             locked: false,
         }
     }
@@ -321,6 +538,10 @@ impl SavedMatrix {
         Self {
             version: 1,
             slots: matrix.describe(sources),
+            note_curves: SavedNoteCurves {
+                velocity: shape_points(&matrix.note_curves.velocity),
+                key: shape_points(&matrix.note_curves.key),
+            },
             locked: matrix.locked(),
         }
     }
@@ -368,6 +589,8 @@ impl SavedMatrix {
             slot.output = view.output.clamp(0.0, 1.0);
             slot.bypass = view.bypass;
         }
+        matrix.note_curves.velocity = shape_of(&self.note_curves.velocity);
+        matrix.note_curves.key = shape_of(&self.note_curves.key);
         matrix.set_locked(self.locked);
         Ok(matrix)
     }
@@ -413,6 +636,9 @@ mod tests {
             "lfo10_y",
             "velocity",
             "key",
+            "release_velocity",
+            "channel_pressure",
+            "poly_pressure",
             "macro8",
             "mod_wheel",
             "pitch_bend",
@@ -473,9 +699,40 @@ mod tests {
             )
             .unwrap();
         matrix.set_aux(n, Some(src("mod_wheel")), true).unwrap();
+        // Spec: engine-core R114 (a macro is a source), R99 (a drawn
+        // velocity curve); both stay in the patch.
+        matrix
+            .add(
+                src("macro1"),
+                Target::Param(params::id(OSC, 0, channel::LEVEL)),
+                0.25,
+                Polarity::Unipolar,
+            )
+            .unwrap();
+        set_note_curve(
+            &mut matrix,
+            NoteCurve::Velocity,
+            &[
+                CurvePoint {
+                    x: 0.0,
+                    y: 0.0,
+                    curve: 0.0,
+                },
+                CurvePoint {
+                    x: 1.0,
+                    y: 0.5,
+                    curve: 0.0,
+                },
+            ],
+        );
         let bytes = save(&matrix, &registry.sources);
         let loaded = load(&bytes, &registry.sources, &registry.destinations).unwrap();
         assert_eq!(loaded, matrix);
+        assert_eq!(
+            loaded.note_curves.velocity.value(1.0),
+            0.5,
+            "the drawn velocity curve stays"
+        );
         assert_eq!(
             needs_of(&loaded, &registry.sources),
             1 << 1,
@@ -486,5 +743,129 @@ mod tests {
             load(&[], &registry.sources, &registry.destinations).unwrap(),
             Matrix::new()
         );
+    }
+
+    // Spec: engine-core R99 (the velocity and key curves are drawn graphs;
+    // Init resets them to the diagonal).
+    #[test]
+    fn the_note_curves_draw_and_reset() {
+        let mut matrix = Matrix::new();
+        assert_eq!(matrix.note_curves.velocity.value(0.5), 0.5);
+        let points = [
+            CurvePoint {
+                x: 0.0,
+                y: 0.0,
+                curve: 0.0,
+            },
+            CurvePoint {
+                x: 1.0,
+                y: 0.25,
+                curve: 0.0,
+            },
+        ];
+        set_note_curve(&mut matrix, NoteCurve::Key, &points);
+        assert_eq!(matrix.note_curves.key.value(1.0), 0.25);
+        assert!(matrix.note_curves != Matrix::new().note_curves);
+        // No points draw the diagonal again, and Init makes a new matrix
+        // with it too.
+        set_note_curve(&mut matrix, NoteCurve::Key, &[]);
+        assert_eq!(matrix.note_curves, Matrix::new().note_curves);
+    }
+
+    // Spec: engine-core R114 (a macro is a source, a destination and an aux
+    // source), R115 (Apply and Delete adds each macro's current offset into
+    // the parameters it drives, then removes every macro route).
+    #[test]
+    fn applying_the_macros_bakes_their_offsets() {
+        let registry = Registry::new();
+        let src = |k: &str| registry.sources.find(k).unwrap();
+        let level = params::id(OSC, 0, channel::LEVEL);
+        let macro2 = global::macro_id(1);
+        let cutoff = params::id(FILTER, 0, filter::CUTOFF);
+        let mut matrix = Matrix::new();
+        // Macro 1 at half its travel moves the level a quarter of the way,
+        // Macro 2 at full half the way: together three quarters.
+        matrix
+            .add(src("macro1"), Target::Param(level), 0.5, Polarity::Unipolar)
+            .unwrap();
+        matrix
+            .add(src("macro2"), Target::Param(level), 0.5, Polarity::Unipolar)
+            .unwrap();
+        // The macros are destinations too, and a slot's amount is one.
+        matrix
+            .add(
+                src("macro1"),
+                Target::Param(macro2),
+                0.5,
+                Polarity::Unipolar,
+            )
+            .unwrap();
+        matrix
+            .add(
+                src("macro1"),
+                Target::Param(slot_amount(9)),
+                0.5,
+                Polarity::Unipolar,
+            )
+            .unwrap();
+        // A two-way route adds nothing at the middle, and a route from
+        // another source stays.
+        matrix
+            .add(src("macro1"), Target::Param(cutoff), 0.5, Polarity::Bipolar)
+            .unwrap();
+        matrix
+            .add(src("lfo1"), Target::Param(cutoff), 0.5, Polarity::Unipolar)
+            .unwrap();
+        let value_of = |id: ParamId| {
+            Some(match id {
+                x if x == macro2 => 50.0,
+                x if x == cutoff => 425.0,
+                x if x == level => 0.0,
+                _ => 0.0,
+            })
+        };
+        let apply = apply_macros(
+            &mut matrix,
+            &registry.space,
+            &registry.sources,
+            &|m| if m == 0 { 0.5 } else { 1.0 },
+            &value_of,
+        );
+        assert_eq!(apply.removed, 5, "every macro route goes");
+        assert_eq!(apply.params, vec![(level, 75.0), (macro2, 75.0)]);
+        assert_eq!(
+            matrix.slot(9).unwrap().amount,
+            0.25,
+            "the slot's amount is baked"
+        );
+        let routes = matrix.describe(&registry.sources);
+        assert_eq!(routes.len(), 1, "the LFO's route stays: {routes:?}");
+        assert_eq!(routes[0].source.as_deref(), Some("lfo1"));
+    }
+
+    // Spec: engine-core R116 (swapping two macros swaps their routes).
+    #[test]
+    fn swapping_two_macros_moves_their_routes() {
+        let registry = Registry::new();
+        let src = |k: &str| registry.sources.find(k).unwrap();
+        let level = Target::Param(params::id(OSC, 0, channel::LEVEL));
+        let cutoff = Target::Param(params::id(FILTER, 0, filter::CUTOFF));
+        let mut matrix = Matrix::new();
+        let n = matrix
+            .add(src("macro1"), level, 0.5, Polarity::Unipolar)
+            .unwrap();
+        matrix
+            .add(src("macro2"), cutoff, 0.5, Polarity::Unipolar)
+            .unwrap();
+        matrix
+            .add(src("lfo1"), level, 0.5, Polarity::Unipolar)
+            .unwrap();
+        // A macro used as an aux source swaps too: two slots change.
+        matrix.set_aux(n, Some(src("macro2")), false).unwrap();
+        assert_eq!(swap_macros(&mut matrix, &registry.sources, 0, 1), 2);
+        assert_eq!(matrix.slot(0).unwrap().source, Some(src("macro2")));
+        assert_eq!(matrix.slot(0).unwrap().aux, Some(src("macro1")));
+        assert_eq!(matrix.slot(1).unwrap().source, Some(src("macro1")));
+        assert_eq!(matrix.slot(2).unwrap().source, Some(src("lfo1")));
     }
 }
