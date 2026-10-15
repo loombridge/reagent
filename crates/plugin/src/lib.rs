@@ -7,7 +7,8 @@
 //! The sound is `reagent-engine`'s. This crate holds the main thread's
 //! half: the parameter space, the modulation matrix (edited by the kit's
 //! `mod.*` commands, compiled here and handed to the audio thread), the
-//! patch's own state, the summary and the guide agents read.
+//! patch's own state, preset files (the `preset.*` commands), the summary
+//! and the guide agents read.
 //!
 //! Without the `export` feature (on by default) the crate is the plug-in's
 //! types alone, for a host that compiles it in, as Beatlayer's native
@@ -23,6 +24,7 @@ use lspk_plugin::{
     AudioLayout, Host, NotePorts, ParamValues, Plugin, PluginError, PluginInfo, ProcessConfig,
     RegisterError, Registry as Commands, features,
 };
+use lspk_presets::{Compare, History};
 use reagent_engine::engine::{self, Engine, mod_config};
 use reagent_engine::modulation::{self, Needs, NoteCurve, Registry};
 use reagent_engine::params::global;
@@ -31,6 +33,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub mod patches;
+pub mod preset;
+
+use preset::SlotState;
 
 pub use reagent_engine::params;
 
@@ -127,6 +132,13 @@ pub struct Reagent {
     needs: Arc<Needs>,
     /// What the last program sent reads.
     sent: u32,
+    /// Each oscillator slot's engines' state: kept from a preset that
+    /// loaded, and written into the next preset saved.
+    slots: Vec<SlotState>,
+    /// The two patches A/B compare holds.
+    compare: Compare,
+    /// The patches before the preset changes, for undo and redo.
+    history: History,
 }
 
 impl std::fmt::Debug for Reagent {
@@ -213,6 +225,9 @@ impl Plugin for Reagent {
             sender: None,
             needs: Arc::new(Needs::default()),
             sent: 0,
+            slots: preset::default_slots(),
+            compare: Compare::new(),
+            history: History::new(preset::UNDO_PRESETS),
         }
     }
 
@@ -299,6 +314,7 @@ impl Plugin for Reagent {
 
     fn register_commands(&self, registry: &mut Commands) -> Result<(), RegisterError> {
         lspk_mod::register(registry)?;
+        preset::register(registry)?;
         for spec in [
             CommandSpec::new(INIT_PATCH, "Init Patch")
                 .description(
@@ -434,6 +450,9 @@ impl Plugin for Reagent {
                 self.host.mark_dirty();
             }
             return Ok(result);
+        }
+        if id.starts_with("preset.") {
+            return preset::run(self, id, args);
         }
         Err(PluginError::new(format!("no command `{id}`")))
     }

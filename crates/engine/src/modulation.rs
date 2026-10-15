@@ -519,19 +519,87 @@ pub struct SavedMatrix {
     pub locked: bool,
 }
 
+impl Default for SavedMatrix {
+    /// An empty matrix's state.
+    fn default() -> Self {
+        Self {
+            version: 1,
+            slots: Vec::new(),
+            note_curves: SavedNoteCurves::default(),
+            locked: false,
+        }
+    }
+}
+
+impl SavedMatrix {
+    /// `matrix` as a patch saves it.
+    #[must_use]
+    pub fn of(matrix: &Matrix, sources: &Sources) -> Self {
+        Self {
+            version: 1,
+            slots: matrix.describe(sources),
+            note_curves: SavedNoteCurves {
+                velocity: shape_points(&matrix.note_curves.velocity),
+                key: shape_points(&matrix.note_curves.key),
+            },
+            locked: matrix.locked(),
+        }
+    }
+
+    /// The matrix this state holds.
+    ///
+    /// # Errors
+    ///
+    /// The state is a later layout, or names a source, destination or slot
+    /// Reagent doesn't have.
+    pub fn matrix(&self, sources: &Sources, dests: &Destinations) -> Result<Matrix, String> {
+        if self.version != 1 {
+            return Err(format!(
+                "a patch state in layout {}, which this version can't read",
+                self.version
+            ));
+        }
+        let mut matrix = Matrix::new();
+        let source = |key: &Option<String>| -> Result<Option<SourceId>, String> {
+            key.as_deref()
+                .map(|k| {
+                    sources
+                        .find(k)
+                        .ok_or_else(|| format!("no modulation source {k:?}"))
+                })
+                .transpose()
+        };
+        for view in &self.slots {
+            if let Some(target) = view.destination
+                && dests.find(target).is_none()
+            {
+                return Err(format!("{target:?} can't be modulated"));
+            }
+            let slot = matrix
+                .slot_mut(usize::from(view.slot))
+                .map_err(|e| e.to_string())?;
+            slot.source = source(&view.source)?;
+            slot.source_curve = Curve::from(&view.source_curve);
+            slot.amount = view.amount.clamp(-1.0, 1.0);
+            slot.polarity = view.polarity;
+            slot.destination = view.destination;
+            slot.aux = source(&view.aux)?;
+            slot.aux_invert = view.aux_invert;
+            slot.aux_curve = Curve::from(&view.aux_curve);
+            slot.output = view.output.clamp(0.0, 1.0);
+            slot.bypass = view.bypass;
+        }
+        matrix.note_curves.velocity = shape_of(&self.note_curves.velocity);
+        matrix.note_curves.key = shape_of(&self.note_curves.key);
+        matrix.set_locked(self.locked);
+        Ok(matrix)
+    }
+}
+
 /// `matrix` as JSON bytes.
 #[must_use]
 pub fn save(matrix: &Matrix, sources: &Sources) -> Vec<u8> {
-    let saved = SavedMatrix {
-        version: 1,
-        slots: matrix.describe(sources),
-        note_curves: SavedNoteCurves {
-            velocity: shape_points(&matrix.note_curves.velocity),
-            key: shape_points(&matrix.note_curves.key),
-        },
-        locked: matrix.locked(),
-    };
-    serde_json::to_vec(&saved).unwrap_or_default()
+    serde_json::to_vec(&SavedMatrix::of(matrix, sources)).unwrap_or_default()
 }
 
 /// The matrix `bytes` hold, as [`save`] wrote it; empty bytes are an
@@ -542,51 +610,12 @@ pub fn save(matrix: &Matrix, sources: &Sources) -> Vec<u8> {
 /// The bytes aren't a saved matrix, or name a source, destination or slot
 /// Reagent doesn't have.
 pub fn load(bytes: &[u8], sources: &Sources, dests: &Destinations) -> Result<Matrix, String> {
-    let mut matrix = Matrix::new();
     if bytes.is_empty() {
-        return Ok(matrix);
+        return Ok(Matrix::new());
     }
     let saved: SavedMatrix =
         serde_json::from_slice(bytes).map_err(|e| format!("not a Reagent patch state: {e}"))?;
-    if saved.version != 1 {
-        return Err(format!(
-            "a patch state in layout {}, which this version can't read",
-            saved.version
-        ));
-    }
-    let source = |key: &Option<String>| -> Result<Option<SourceId>, String> {
-        key.as_deref()
-            .map(|k| {
-                sources
-                    .find(k)
-                    .ok_or_else(|| format!("no modulation source {k:?}"))
-            })
-            .transpose()
-    };
-    for view in &saved.slots {
-        if let Some(target) = view.destination
-            && dests.find(target).is_none()
-        {
-            return Err(format!("{target:?} can't be modulated"));
-        }
-        let slot = matrix
-            .slot_mut(usize::from(view.slot))
-            .map_err(|e| e.to_string())?;
-        slot.source = source(&view.source)?;
-        slot.source_curve = Curve::from(&view.source_curve);
-        slot.amount = view.amount.clamp(-1.0, 1.0);
-        slot.polarity = view.polarity;
-        slot.destination = view.destination;
-        slot.aux = source(&view.aux)?;
-        slot.aux_invert = view.aux_invert;
-        slot.aux_curve = Curve::from(&view.aux_curve);
-        slot.output = view.output.clamp(0.0, 1.0);
-        slot.bypass = view.bypass;
-    }
-    matrix.note_curves.velocity = shape_of(&saved.note_curves.velocity);
-    matrix.note_curves.key = shape_of(&saved.note_curves.key);
-    matrix.set_locked(saved.locked);
-    Ok(matrix)
+    saved.matrix(sources, dests)
 }
 
 #[cfg(test)]

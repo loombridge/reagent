@@ -1,0 +1,36 @@
+[package]
+name = "reagent-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+description = "Fuzz targets for Reagent's file readers, run with cargo-fuzz on a nightly toolchain"
+
+[package.metadata]
+cargo-fuzz = true
+
+# A standalone workspace, as cargo-fuzz needs: the fuzzer runs on a nightly
+# toolchain, while the product builds on the pinned stable one. It keeps its
+# own Cargo.lock, so its dependencies never touch the product's.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+lspk-plugin = { git = "https://github.com/loombridge/plugin-kit", rev = "0d4fd40d537ea16fc1a8eea544cf0a44787f53fb", default-features = false }
+lspk-presets = { git = "https://github.com/loombridge/plugin-kit", rev = "0d4fd40d537ea16fc1a8eea544cf0a44787f53fb" }
+reagent = { path = "../crates/plugin", default-features = false }
+reagent-engine = { path = "../crates/engine" }
+serde_json = "1"
+
+[[bin]]
+name = "preset"
+path = "fuzz_targets/preset.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+# Keep overflow checks and debug assertions on, so the fuzzer finds what a
+# debug build would panic on.
+debug-assertions = true
+overflow-checks = true
