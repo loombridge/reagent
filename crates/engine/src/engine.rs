@@ -22,9 +22,10 @@
 //! After the block, the oversampler's way down brings the output to the
 //! host's rate.
 //!
-//! The sub and noise channels are placeholders until R1.8: their routing,
-//! level and pan are wired, but their sources are silent, so they cost
-//! nothing.
+//! The sub and noise channels (R1.8) play the kit's sub and noise
+//! oscillators — the sub's six fixed shapes, and the noise's playback of
+//! Reagent's own colour blocks — through the same routing, level and pan
+//! as the main oscillators.
 //!
 //! # Audio sources in the matrix
 //!
@@ -63,12 +64,16 @@ use lspk_voice::{
     Voices,
 };
 use lspk_wavetable::SharedTable;
+use lspk_wavetable::noise::{
+    COLOUR_RATE, COLOUR_SECONDS, Colour, Inputs as NoiseInputs, Noise, Samples,
+};
 use lspk_wavetable::osc::{Inputs, Layout as OscLayout, Onset, Oscillator, PhaseMode};
+use lspk_wavetable::sub::{Inputs as SubInputs, Shape as SubShape, Sub};
 
 use crate::modulation::{AUDIO_SOURCES, Needs, Registry, audio_bit};
 use crate::params::{
     self, AMP_ENV, BUS, BUSES, ENVELOPES, FILTER, FILTERS, LFO, LFOS, MACROS, MOD_ENV, NOISE, OSC,
-    OSCILLATORS, SUB, bus, channel, env, filter, global, lfo, osc,
+    OSCILLATORS, SUB, bus, channel, env, filter, global, lfo, noise, osc, sub,
 };
 use crate::routing::{
     self, BusOutput, ChannelOutput, FilterOutput, balance_shares, filter_order, pan_gains,
@@ -95,6 +100,9 @@ const OS_CHUNK: usize = CHUNK * MAX_FACTOR;
 const SETTLE_FRAMES: usize = 256;
 /// The most note ends and parameter resets one block reports.
 const REPORTS: usize = 256;
+
+/// The seed each colour noise block is generated from (R49).
+const COLOUR_SEEDS: [u64; 4] = [0x0E5E_0001, 0x0E5E_0002, 0x0E5E_0003, 0x0E5E_0004];
 
 /// The oversampling factor of quality index `quality` (Good, High, Ultra).
 #[must_use]
@@ -360,6 +368,14 @@ struct Synth {
     /// Each oscillator laid out for every unison count, 1 to 16 copies, so
     /// changing the count never allocates.
     units: Vec<Vec<Unit>>,
+    /// The sub oscillator, one lane per voice (R40).
+    sub: Sub,
+    /// The noise oscillator, one lane per voice (R45).
+    noise: Noise,
+    /// Reagent's own colour noise blocks, the noise's sources (R49).
+    colours: Vec<Samples>,
+    /// Which colour the noise plays.
+    noise_source: usize,
     /// Each oscillator's unison count now.
     copies: [usize; OSCILLATORS],
     /// Each oscillator's unison controls.
@@ -368,6 +384,10 @@ struct Synth {
     /// again on the new layout.
     restart: [bool; OSCILLATORS],
     osc_params: [lspk_wavetable::osc::Params; OSCILLATORS],
+    /// The sub's controls, as last rebuilt.
+    sub_params: lspk_wavetable::sub::Params,
+    /// The noise's controls, as last rebuilt.
+    noise_params: lspk_wavetable::noise::Params,
     channels: [ChannelState; OSCILLATORS + 2],
     filters: Vec<FilterBank>,
     filter_state: [FilterState; FILTERS],
@@ -519,6 +539,15 @@ impl Engine {
         let filters = (0..FILTERS)
             .map(|_| FilterBank::new(os_rate, MAX_VOICES, 2))
             .collect();
+        // Reagent's own colour noises, the noise oscillator's sources,
+        // generated in code at 48 kHz (R49).
+        let colours: Vec<Samples> = Colour::ALL
+            .into_iter()
+            .zip(COLOUR_SEEDS)
+            .map(|(colour, seed)| Samples::colour(colour, COLOUR_SECONDS, COLOUR_RATE, seed))
+            .collect();
+        let sub = Sub::new(MAX_VOICES, os_rate, OS_CHUNK);
+        let noise = Noise::new(MAX_VOICES, os_rate, OS_CHUNK, 0x5EED);
         let timing = Timing::new(rate);
         let envs = (0..ENVELOPES)
             .map(|e| {
@@ -554,10 +583,16 @@ impl Engine {
             needed: 0,
             table_frames,
             units,
+            sub,
+            noise,
+            colours,
+            noise_source: params::DEFAULT_NOISE_SOURCE,
             copies: [1; OSCILLATORS],
             unison: [Unison::default(); OSCILLATORS],
             restart: [false; OSCILLATORS],
             osc_params: [lspk_wavetable::osc::Params::default(); OSCILLATORS],
+            sub_params: lspk_wavetable::sub::Params::default(),
+            noise_params: lspk_wavetable::noise::Params::default(),
             channels: [ChannelState {
                 on: false,
                 level: 0.0,
@@ -785,6 +820,8 @@ impl Processor for Engine {
         for f in &mut self.synth.filters {
             f.reset();
         }
+        self.synth.sub.reset();
+        self.synth.noise.reset();
         for o in &mut self.oversamplers {
             o.reset();
         }
@@ -938,6 +975,43 @@ impl Synth {
                 let count = unit.osc.lane_count();
                 unit.osc
                     .set_unison(0..count, unit.lanes.pitch(), unit.lanes.frame());
+            } else if s == OSCILLATORS {
+                let shape = match v.get(p(sub::SHAPE)).round().max(0.0) as usize {
+                    1 => SubShape::RoundedSquare,
+                    2 => SubShape::Triangle,
+                    3 => SubShape::Saw,
+                    4 => SubShape::Square,
+                    5 => SubShape::Pulse,
+                    _ => SubShape::Sine,
+                };
+                self.sub_params = lspk_wavetable::sub::Params {
+                    octave: v.get(p(sub::OCTAVE)).round() as i32,
+                    sweep: f32_of(p(sub::SWEEP)),
+                    shape,
+                    phase: f32_of(p(sub::PHASE)),
+                    continue_phase: v.on(p(sub::CONTINUE_PHASE)),
+                    wrap_phase: v.on(p(sub::WRAP_PHASE)),
+                    key_track: v.on(p(sub::KEY_TRACK)),
+                    level: f32_of(p(channel::LEVEL)),
+                    reference: self.reference,
+                };
+                *self.sub.params_mut() = self.sub_params;
+            } else {
+                self.noise_params = lspk_wavetable::noise::Params {
+                    looped: v.get(p(noise::LOOP)).round() >= 1.0,
+                    start: f32_of(p(noise::START)),
+                    start_random: f32_of(p(noise::START_RANDOM)),
+                    rate: f32_of(p(noise::RATE)),
+                    fine: f32_of(p(noise::FINE)),
+                    key_track: v.on(p(noise::KEY_TRACK)),
+                    stereo: f32_of(p(noise::STEREO)),
+                    tone: f32_of(p(noise::TONE)),
+                    level: f32_of(p(channel::LEVEL)),
+                    reference: self.reference,
+                };
+                *self.noise.params_mut() = self.noise_params;
+                self.noise_source = (v.get(p(noise::SOURCE)).round().max(0.0) as usize)
+                    .min(params::NOISE_SOURCES.len() - 1);
             }
         }
         for f in 0..FILTERS {
@@ -1085,6 +1159,8 @@ impl Synth {
                 for f in &mut self.filters {
                     f.set_sample_rate(os_rate);
                 }
+                self.sub.set_sample_rate(os_rate);
+                self.noise.set_sample_rate(os_rate);
             }
             let reference = f32_of(global::REFERENCE_PITCH);
             if reference != self.reference {
@@ -1095,6 +1171,10 @@ impl Synth {
                 for unit in self.units.iter_mut().flatten() {
                     unit.osc.params_mut().reference = reference;
                 }
+                self.sub_params.reference = reference;
+                self.noise_params.reference = reference;
+                self.sub.params_mut().reference = reference;
+                self.noise.params_mut().reference = reference;
             }
             let env_scale = f64::from(f32_of(global::ENV_SCALE)) / 100.0;
             if env_scale != self.env_scale {
@@ -1145,16 +1225,17 @@ impl Synth {
             self.modeng.set_voice_limit(settings.voices);
         }
         if any_channel {
-            self.needs_all_envs = self.channels[..OSCILLATORS].iter().any(|c| {
+            self.needs_all_envs = self.channels[..OSCILLATORS + 2].iter().any(|c| {
                 c.on && !c.amp_env && matches!(c.output, ChannelOutput::Main | ChannelOutput::Dry)
             }) || self.filter_state.iter().any(|f| f.on && !f.amp_env);
         }
     }
 
-    /// Whether filter `f` takes any signal: from an oscillator routed to
-    /// the filters with a share for it, or from the other filter.
+    /// Whether filter `f` takes any signal: from an oscillator, the sub or
+    /// the noise routed to the filters with a share for it, or from the
+    /// other filter.
     fn filter_fed(&self, f: usize) -> bool {
-        let from_osc = self.channels[..OSCILLATORS].iter().any(|c| {
+        let from_osc = self.channels[..OSCILLATORS + 2].iter().any(|c| {
             c.on && c.output == ChannelOutput::Filter && {
                 let (s1, s2) = balance_shares(c.balance);
                 if f == 0 { s1 > 0.0 } else { s2 > 0.0 }
@@ -1167,7 +1248,7 @@ impl Synth {
     }
 
     fn filter_fed_direct(&self, f: usize) -> bool {
-        self.channels[..OSCILLATORS].iter().any(|c| {
+        self.channels[..OSCILLATORS + 2].iter().any(|c| {
             c.on && c.output == ChannelOutput::Filter && {
                 let (s1, s2) = balance_shares(c.balance);
                 if f == 0 { s1 > 0.0 } else { s2 > 0.0 }
@@ -1466,93 +1547,99 @@ impl Synth {
             }
         }
 
-        for s in 0..OSCILLATORS {
+        for s in 0..OSCILLATORS + 2 {
             let ch = self.channels[s];
             if !ch.on || span == 0 {
                 continue;
             }
-            let p = |param: u16| params::id(OSC, s as u8, param);
-            let copies = self.copies[s];
-            let lane_count = self.units[s][copies - 1].osc.lane_count();
-            let lanes = span * copies;
-            // Each copy's lane takes its voice's pitch, and glide's step at
-            // the quality's rate.
-            let pitch = voices.pitch();
-            let step = voices.pitch_step();
-            for v in 0..span {
-                for i in 0..copies {
-                    self.lane_pitch[v * copies + i] = pitch[v];
-                    self.pitch_step[v * copies + i] = step[v] / k as f32;
-                }
-            }
-            // Audio-rate modulation of the oscillator's tuning and of main
-            // tuning, in semitones.
-            let pitch_mods = [osc::OCTAVE, osc::SEMITONE, osc::FINE, osc::SWEEP]
-                .map(|m| (m, modulation(&self.modeng, self.values.dest(p(m)))));
-            let any_pitch = pitch_mods.iter().any(|(_, m)| m.is_some())
-                || tuning_mod.is_some()
-                || self.tuning != 0.0;
-            if any_pitch {
-                let base = self.osc_params[s].tune();
-                for t in 0..n {
-                    for v in 0..span {
-                        let mut offset = tuning_mod.at(t, v).map_or(self.tuning, |pos| {
-                            // Main tuning is unbounded (R137).
-                            -64.0 + 128.0 * pos
-                        });
-                        let mut tune = base;
-                        for &(m, ref modu) in &pitch_mods {
-                            if let Some(pos) = modu.at(t, v) {
-                                let real = self.values.real(p(m), pos);
-                                let base_real = self.values.get(p(m)) as f32;
-                                let (real, scale) = match m {
-                                    osc::OCTAVE => (real.round(), 12.0),
-                                    osc::SEMITONE => (real.round(), 1.0),
-                                    osc::FINE => (real, 0.01),
-                                    _ => (real, 1.0),
-                                };
-                                tune += (real - base_real) * scale;
-                            }
-                        }
-                        offset += tune - base;
-                        for i in 0..k {
-                            let row = (t * k + i) * lane_count + v * copies;
-                            self.pitch_mod[row..row + copies].fill(offset);
-                        }
-                    }
-                }
-            }
-            // Frame.
-            let frame_mod = modulation(&self.modeng, self.values.dest(p(osc::FRAME)));
-            if frame_mod.is_some() {
-                let base = self.values.get(p(osc::FRAME)) as f32;
-                let frames = self.table_frames.max(1) as f32 - 1.0;
-                for j in 0..os_n {
-                    for v in 0..span {
-                        let pos = frame_mod.at(j / k, v).unwrap_or(0.0);
-                        let real = self.values.real(p(osc::FRAME), pos);
-                        let row = j * lane_count + v * copies;
-                        self.frame_mod[row..row + copies].fill((real - base) / 100.0 * frames);
-                    }
-                }
-            }
-            let inputs = Inputs {
-                lanes,
-                pitch: &self.lane_pitch,
-                pitch_step: Some(&self.pitch_step),
-                pitch_mod: any_pitch.then_some(&self.pitch_mod[..os_n * lane_count]),
-                frame_mod: frame_mod
-                    .is_some()
-                    .then_some(&self.frame_mod[..os_n * lane_count]),
+            let p = |param: u16| match s {
+                0..=2 => params::id(OSC, s as u8, param),
+                3 => params::id(SUB, 0, param),
+                _ => params::id(NOISE, 0, param),
             };
             let level_mod = modulation(&self.modeng, self.values.dest(p(channel::LEVEL)));
             let pan_mod = modulation(&self.modeng, self.values.dest(p(channel::PAN)));
-            {
-                let unit = &mut self.units[s][copies - 1];
-                // The oscillator's own level fades without clicks; a
-                // modulated level is applied below instead.
-                unit.osc.params_mut().level = if level_mod.is_some() { 100.0 } else { ch.level };
-                unit.osc
+            if s < OSCILLATORS {
+                let copies = self.copies[s];
+                let lane_count = self.units[s][copies - 1].osc.lane_count();
+                let lanes = span * copies;
+                // Each copy's lane takes its voice's pitch, and glide's step at
+                // the quality's rate.
+                let pitch = voices.pitch();
+                let step = voices.pitch_step();
+                for v in 0..span {
+                    for i in 0..copies {
+                        self.lane_pitch[v * copies + i] = pitch[v];
+                        self.pitch_step[v * copies + i] = step[v] / k as f32;
+                    }
+                }
+                // Audio-rate modulation of the oscillator's tuning and of main
+                // tuning, in semitones.
+                let pitch_mods = [osc::OCTAVE, osc::SEMITONE, osc::FINE, osc::SWEEP]
+                    .map(|m| (m, modulation(&self.modeng, self.values.dest(p(m)))));
+                let any_pitch = pitch_mods.iter().any(|(_, m)| m.is_some())
+                    || tuning_mod.is_some()
+                    || self.tuning != 0.0;
+                if any_pitch {
+                    let base = self.osc_params[s].tune();
+                    for t in 0..n {
+                        for v in 0..span {
+                            let mut offset = tuning_mod.at(t, v).map_or(self.tuning, |pos| {
+                                // Main tuning is unbounded (R137).
+                                -64.0 + 128.0 * pos
+                            });
+                            let mut tune = base;
+                            for &(m, ref modu) in &pitch_mods {
+                                if let Some(pos) = modu.at(t, v) {
+                                    let real = self.values.real(p(m), pos);
+                                    let base_real = self.values.get(p(m)) as f32;
+                                    let (real, scale) = match m {
+                                        osc::OCTAVE => (real.round(), 12.0),
+                                        osc::SEMITONE => (real.round(), 1.0),
+                                        osc::FINE => (real, 0.01),
+                                        _ => (real, 1.0),
+                                    };
+                                    tune += (real - base_real) * scale;
+                                }
+                            }
+                            offset += tune - base;
+                            for i in 0..k {
+                                let row = (t * k + i) * lane_count + v * copies;
+                                self.pitch_mod[row..row + copies].fill(offset);
+                            }
+                        }
+                    }
+                }
+                // Frame.
+                let frame_mod = modulation(&self.modeng, self.values.dest(p(osc::FRAME)));
+                if frame_mod.is_some() {
+                    let base = self.values.get(p(osc::FRAME)) as f32;
+                    let frames = self.table_frames.max(1) as f32 - 1.0;
+                    for j in 0..os_n {
+                        for v in 0..span {
+                            let pos = frame_mod.at(j / k, v).unwrap_or(0.0);
+                            let real = self.values.real(p(osc::FRAME), pos);
+                            let row = j * lane_count + v * copies;
+                            self.frame_mod[row..row + copies].fill((real - base) / 100.0 * frames);
+                        }
+                    }
+                }
+                let inputs = Inputs {
+                    lanes,
+                    pitch: &self.lane_pitch,
+                    pitch_step: Some(&self.pitch_step),
+                    pitch_mod: any_pitch.then_some(&self.pitch_mod[..os_n * lane_count]),
+                    frame_mod: frame_mod
+                        .is_some()
+                        .then_some(&self.frame_mod[..os_n * lane_count]),
+                };
+                {
+                    let unit = &mut self.units[s][copies - 1];
+                    // The oscillator's own level fades without clicks; a
+                    // modulated level is applied below instead.
+                    unit.osc.params_mut().level =
+                        if level_mod.is_some() { 100.0 } else { ch.level };
+                    unit.osc
                     // Always the SIMD kernel: the oscillator's scalar path for
                     // a few lanes reads the table differently, and which path a
                     // lane count takes depends on the CPU's vector width, so
@@ -1563,13 +1650,142 @@ impl Synth {
                         &inputs,
                         &mut self.osc_out[..os_n * lane_count],
                     );
-                self.uni_out[..os_n * 2 * S].fill(0.0);
-                unit.lanes.mix(
-                    os_n,
-                    span,
-                    &self.osc_out[..os_n * lane_count],
-                    &mut self.uni_out[..os_n * 2 * S],
-                );
+                    self.uni_out[..os_n * 2 * S].fill(0.0);
+                    unit.lanes.mix(
+                        os_n,
+                        span,
+                        &self.osc_out[..os_n * lane_count],
+                        &mut self.uni_out[..os_n * 2 * S],
+                    );
+                }
+            } else if s == OSCILLATORS {
+                // The sub: one lane per voice (R40), its pitch and phase
+                // modulated at audio rate (R42).
+                let pitch = voices.pitch();
+                let step = voices.pitch_step();
+                for v in 0..span {
+                    self.lane_pitch[v] = pitch[v];
+                    self.pitch_step[v] = step[v] / k as f32;
+                }
+                let pitch_mods = [sub::OCTAVE, sub::SWEEP]
+                    .map(|m| (m, modulation(&self.modeng, self.values.dest(p(m)))));
+                let phase_mod = modulation(&self.modeng, self.values.dest(p(sub::PHASE)));
+                let any_pitch = pitch_mods.iter().any(|(_, m)| m.is_some())
+                    || tuning_mod.is_some()
+                    || self.tuning != 0.0;
+                if any_pitch {
+                    let base = self.sub_params.tune();
+                    for t in 0..n {
+                        for v in 0..span {
+                            let mut offset = tuning_mod.at(t, v).map_or(self.tuning, |pos| {
+                                // Main tuning is unbounded (R137).
+                                -64.0 + 128.0 * pos
+                            });
+                            let mut tune = base;
+                            for &(m, ref modu) in &pitch_mods {
+                                if let Some(pos) = modu.at(t, v) {
+                                    let real = self.values.real(p(m), pos);
+                                    let base_real = self.values.get(p(m)) as f32;
+                                    let (real, scale) = if m == sub::OCTAVE {
+                                        (real.round(), 12.0)
+                                    } else {
+                                        (real, 1.0)
+                                    };
+                                    tune += (real - base_real) * scale;
+                                }
+                            }
+                            offset += tune - base;
+                            for i in 0..k {
+                                self.pitch_mod[(t * k + i) * S + v] = offset;
+                            }
+                        }
+                    }
+                }
+                if phase_mod.is_some() {
+                    let base = self.values.get(p(sub::PHASE)) as f32;
+                    for t in 0..n {
+                        for v in 0..span {
+                            let offset = phase_mod.at(t, v).map_or(0.0, |pos| {
+                                (self.values.real(p(sub::PHASE), pos) - base) / 360.0
+                            });
+                            for i in 0..k {
+                                self.frame_mod[(t * k + i) * S + v] = offset;
+                            }
+                        }
+                    }
+                }
+                let inputs = SubInputs {
+                    lanes: span,
+                    pitch: &self.lane_pitch,
+                    pitch_step: Some(&self.pitch_step),
+                    pitch_mod: any_pitch.then_some(&self.pitch_mod[..os_n * S]),
+                    phase_mod: phase_mod.is_some().then_some(&self.frame_mod[..os_n * S]),
+                };
+                let mut params = self.sub_params;
+                params.level = if level_mod.is_some() { 100.0 } else { ch.level };
+                let sub = &mut self.sub;
+                *sub.params_mut() = params;
+                sub.process(os_n, &inputs, &mut self.osc_out[..os_n * S]);
+                for j in 0..os_n {
+                    for v in 0..span {
+                        let x = self.osc_out[j * S + v];
+                        self.uni_out[j * 2 * S + v] = x;
+                        self.uni_out[j * 2 * S + S + v] = x;
+                    }
+                }
+            } else {
+                // The noise: a sample player over one of Reagent's own
+                // colour blocks (R45 to R49).
+                let pitch = voices.pitch();
+                let step = voices.pitch_step();
+                for v in 0..span {
+                    self.lane_pitch[v] = pitch[v];
+                    self.pitch_step[v] = step[v] / k as f32;
+                }
+                // Rate, Fine, Stereo and Tone are shared controls: a route
+                // to one moves every voice together.
+                let shared = |param: u16, base: f32, scale: f32| {
+                    modulation(&self.modeng, self.values.dest(p(param)))
+                        .at(0, 0)
+                        .map_or(base, |pos| self.values.real(p(param), pos) * scale)
+                };
+                let start_mod = modulation(&self.modeng, self.values.dest(p(noise::START)));
+                if start_mod.is_some() {
+                    let base = self.values.get(p(noise::START)) as f32;
+                    for t in 0..n {
+                        for v in 0..span {
+                            let offset = start_mod
+                                .at(t, v)
+                                .map_or(0.0, |pos| self.values.real(p(noise::START), pos) - base);
+                            for i in 0..k {
+                                self.frame_mod[(t * k + i) * S + v] = offset;
+                            }
+                        }
+                    }
+                }
+                let inputs = NoiseInputs {
+                    lanes: span,
+                    pitch: &self.lane_pitch,
+                    pitch_step: Some(&self.pitch_step),
+                    start_mod: start_mod.is_some().then_some(&self.frame_mod[..os_n * S]),
+                };
+                let base = self.noise_params;
+                let params = lspk_wavetable::noise::Params {
+                    rate: shared(noise::RATE, base.rate, 1.0),
+                    fine: shared(noise::FINE, base.fine, 1.0),
+                    stereo: shared(noise::STEREO, base.stereo, 1.0),
+                    tone: shared(noise::TONE, base.tone, 1.0),
+                    level: if level_mod.is_some() {
+                        100.0
+                    } else {
+                        base.level
+                    },
+                    ..base
+                };
+                let source = &self.colours[self.noise_source];
+                let noise = &mut self.noise;
+                *noise.params_mut() = params;
+                noise.process(os_n, &inputs, source, &mut self.uni_out[..os_n * 2 * S]);
             }
             // The source's audio for the matrix, at the host's rate.
             if self.needed & audio_bit(s) != 0 {
@@ -1991,6 +2207,8 @@ impl VoiceHandler for Synth {
                         .set_unison(lanes, unit.lanes.pitch(), unit.lanes.frame());
                     unit.osc.start(v, key, onset);
                 }
+                self.sub.start(v, key, onset);
+                self.noise.start(v, onset);
                 match start {
                     Start::Fresh => {
                         for e in &mut self.envs {
