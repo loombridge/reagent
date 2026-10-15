@@ -1164,8 +1164,9 @@ pub fn lfo_module() -> ModuleType {
         .param(toggle(
             SONG_LOCK,
             "Song lock",
-            true,
-            "Locks a synced LFO's phase to the host's song position.",
+            false,
+            "While the host plays, fixes the LFO's phase to its song position, so the same \
+             position plays the same phase.",
         ))
         .param(toggle(
             SWING,
@@ -1461,7 +1462,9 @@ mod tests {
             DIVISIONS[default(id(LFO, 0, lfo::DIVISION)) as usize],
             "1/4"
         );
-        assert_eq!(default(id(LFO, 0, lfo::SONG_LOCK)), 1.0);
+        // The interface's own default isn't observed yet; off until it is
+        // (engine-core R84).
+        assert_eq!(default(id(LFO, 0, lfo::SONG_LOCK)), 0.0);
         assert_eq!(default(global::macro_id(7)), 0.0);
         assert_eq!(default(global::VOICES), 8.0);
         assert_eq!(default(global::STEAL), 0.0);
