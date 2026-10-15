@@ -6,6 +6,7 @@
 //! | [`params`] | Every parameter of every module, with IDs that never change and real names |
 //! | [`routing`] | Where each channel, filter and bus goes, and the rule that keeps routes from looping |
 //! | [`modulation`] | Every modulation source and destination, and the matrix as a patch saves it |
+//! | [`patch`] | The patch compiler: the modules in use as a flat program, and its mailbox |
 //! | [`table`] | The default wavetable |
 //! | [`engine`] | The engine on the audio thread |
 //! | [`describe`] | A patch in prose, and the guide for agents |
@@ -29,6 +30,7 @@ pub mod describe;
 pub mod engine;
 pub mod modulation;
 pub mod params;
+pub mod patch;
 pub mod routing;
 pub mod table;
 

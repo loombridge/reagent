@@ -7,8 +7,10 @@
 //! The sound is `reagent-engine`'s. This crate holds the main thread's
 //! half: the parameter space, the modulation matrix (edited by the kit's
 //! `mod.*` commands, compiled here and handed to the audio thread), the
-//! patch's own state, preset files (the `preset.*` commands), the summary
-//! and the guide agents read.
+//! patch compiled into the flat program the audio thread runs (the
+//! `reagent_engine::patch` compiler, handed over the same way), the patch's
+//! own state, preset files (the `preset.*` commands), the summary and the
+//! guide agents read.
 //!
 //! Without the `export` feature (on by default) the crate is the plug-in's
 //! types alone, for a host that compiles it in, as Beatlayer's native
@@ -19,7 +21,7 @@ use std::sync::Arc;
 use lspk_commands::{CommandSpec, Context, NoArgs, Permission};
 use lspk_mod::curve::CurvePoint;
 use lspk_mod::{Matrix, ProgramSender, mailbox};
-use lspk_params::{ParamDescriptor, ParamSpace};
+use lspk_params::{ParamDescriptor, ParamId, ParamSpace};
 use lspk_plugin::{
     AudioLayout, Host, NotePorts, ParamValues, Plugin, PluginError, PluginInfo, ProcessConfig,
     RegisterError, Registry as Commands, features,
@@ -27,7 +29,8 @@ use lspk_plugin::{
 use lspk_presets::{Compare, History};
 use reagent_engine::engine::{self, Engine, mod_config};
 use reagent_engine::modulation::{self, Needs, NoteCurve, Registry};
-use reagent_engine::params::global;
+use reagent_engine::params::{FILTERS, global};
+use reagent_engine::patch::{self, ChannelState, FilterState, Patch, PatchSender};
 use reagent_engine::{describe, table};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -129,6 +132,8 @@ pub struct Reagent {
     /// Where compiled matrices go, while the processor is active, and the
     /// sample rate they're compiled for.
     sender: Option<(ProgramSender, f64)>,
+    /// Where compiled patches go, while the processor is active.
+    patches: Option<PatchSender>,
     needs: Arc<Needs>,
     /// What the last program sent reads.
     sent: u32,
@@ -199,6 +204,34 @@ impl Reagent {
         sender.send(program);
         self.sent = needs;
     }
+
+    /// The patch compiled into a flat program: the oscillators, the sub and
+    /// the noise that are on, the filters a signal reaches, and whether a
+    /// voice waits for every envelope (engine-core R59, R65, R10). Allocates
+    /// nothing.
+    #[must_use]
+    pub fn compile_patch(&self) -> Patch {
+        let get = |id: ParamId| self.host.param(id).unwrap_or(0.0);
+        let channels: [ChannelState; patch::CHANNELS] =
+            std::array::from_fn(|s| ChannelState::of(s, &get));
+        let filters: [FilterState; FILTERS] = std::array::from_fn(|f| FilterState::of(f, &get));
+        Patch::compile(&channels, &filters)
+    }
+
+    /// Compiles the patch and hands it to the audio thread, which takes it
+    /// at its next block's start: what runs is what the program says, and
+    /// the engine's state — the voices, the oscillators' phases, the
+    /// filters' tails, the envelopes and the LFOs — moves across untouched.
+    /// Returns whether the processor was active to take it. The plug-in's
+    /// commands call this when a patch changes.
+    pub fn recompile(&mut self) -> bool {
+        let patch = self.compile_patch();
+        let Some(patches) = self.patches.as_mut() else {
+            return false;
+        };
+        patches.send(patch);
+        true
+    }
 }
 
 impl Plugin for Reagent {
@@ -223,6 +256,7 @@ impl Plugin for Reagent {
             registry: Registry::new(),
             matrix: Matrix::new(),
             sender: None,
+            patches: None,
             needs: Arc::new(Needs::default()),
             sent: 0,
             slots: preset::default_slots(),
@@ -241,6 +275,7 @@ impl Plugin for Reagent {
         values: &ParamValues,
     ) -> Result<Engine, PluginError> {
         let (mut sender, receiver) = mailbox();
+        let (mut patches, patch_receiver) = patch::mailbox();
         self.sync_note_curves();
         let program = self
             .registry
@@ -248,7 +283,8 @@ impl Plugin for Reagent {
         self.sent = modulation::needs_of(&self.matrix, &self.registry.sources);
         self.needs.set(self.sent);
         sender.send(program);
-        let engine = Engine::new(
+        patches.send(self.compile_patch());
+        let mut engine = Engine::new(
             config.sample_rate,
             config.max_frames as usize,
             values,
@@ -257,13 +293,16 @@ impl Plugin for Reagent {
             receiver,
             self.needs.clone(),
         );
+        engine.attach_patches(patch_receiver);
         self.sender = Some((sender, config.sample_rate));
+        self.patches = Some(patches);
         Ok(engine)
     }
 
     fn deactivate(&mut self, processor: Engine) {
         drop(processor);
         self.sender = None;
+        self.patches = None;
     }
 
     fn save_state(&self) -> Vec<u8> {
@@ -380,6 +419,7 @@ impl Plugin for Reagent {
             }
             self.matrix = Matrix::new();
             self.send_matrix();
+            self.recompile();
             self.host.mark_dirty();
             return Ok(serde_json::Value::Null);
         }
@@ -432,6 +472,7 @@ impl Plugin for Reagent {
                     .map_err(|e| PluginError::new(e.to_string()))?;
             }
             self.send_matrix();
+            self.recompile();
             self.host.mark_dirty();
             return Ok(serde_json::to_value(ApplyMacrosResult {
                 parameters: apply.params.len(),
