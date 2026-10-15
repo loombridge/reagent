@@ -551,3 +551,66 @@ fn filter_key_tracking_follows_first_key_tracked_oscillator() {
         "glide moves cutoff smoothly: early={tone_early}, mid={tone_mid}, late={tone_late}"
     );
 }
+
+// Spec: engine-core R1.17 (a voice ends when its output falls below the
+// noise floor, so the instrument sleeps and does no work).
+#[test]
+fn after_a_notes_tail_the_instrument_sleeps_with_no_work() {
+    let render = lspk_test::render::render::<Reagent>(
+        &Script::new((0.5 * RATE) as usize).note(0, (0.2 * RATE) as u32, 60, 1.0),
+        Settings::new(RATE, 64),
+    )
+    .expect("a render");
+    // Env 1's 15 ms release ends well before 0.4 s: from there the output
+    // is digitally silent and the plug-in asks the host to let it sleep.
+    assert!(
+        render.output.channel(0)[(0.4 * RATE) as usize..]
+            .iter()
+            .all(|s| *s == 0.0),
+        "digitally silent after the tail"
+    );
+    assert!(render.sleeps());
+}
+
+// Spec: engine-core R1.17 (a note wakes the sleeping instrument without a
+// click).
+#[test]
+fn a_note_wakes_the_sleeping_instrument_without_a_click() {
+    let registry = Registry::new();
+    let mut patch = patches::init();
+    // A deterministic sine: the phase is fixed, so the same note renders
+    // the same way whenever it starts.
+    patch.params.extend([
+        (id(OSC, 0, osc::PHASE_RANDOM), 0.0),
+        (id(OSC, 0, osc::PHASE), 0.0),
+        (id(OSC, 0, osc::FRAME), 100.0),
+    ]);
+    let silence = (0.5 * RATE) as u32;
+    let note = (0.3 * RATE) as usize;
+    let render = |start: u32, frames: usize| -> Output {
+        let mut instance = Instance::<Reagent>::new().expect("an instance");
+        instance
+            .load_state(&patch.state(&registry))
+            .expect("the patch loads");
+        instance
+            .activate(Settings::new(RATE, 64))
+            .expect("activation");
+        instance
+            .render(&Script::new(frames).note_on(start, 60, 1.0))
+            .output
+    };
+    // A note after half a second of silence, then the same note from a
+    // fresh instance: identical, so the wake adds no click.
+    let woken = render(silence, silence as usize + note);
+    let fresh = render(0, note);
+    let woken = woken.channel(0);
+    let fresh = fresh.channel(0);
+    assert!(
+        woken[..silence as usize].iter().all(|s| *s == 0.0),
+        "silent while asleep"
+    );
+    assert!(
+        woken[silence as usize..] == fresh[..note],
+        "the waking note matches a fresh one"
+    );
+}
