@@ -89,6 +89,18 @@ pub fn init() -> Patch {
     }
 }
 
+/// An empty patch: no oscillator, the sub or the noise on. The compiler
+/// leaves every channel out of the program, so a note runs the voices and
+/// the envelopes and nothing else — the benchmark's floor case.
+#[must_use]
+pub fn empty() -> Patch {
+    Patch {
+        name: "empty",
+        params: vec![(osc_param(0, channel::ON), 0.0)],
+        routes: Vec::new(),
+    }
+}
+
 /// A lead: oscillator A's saw as seven unison copies with the Dense detune
 /// law, over oscillator B an octave down as three, through a bright
 /// low-pass filter.
