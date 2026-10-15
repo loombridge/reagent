@@ -116,6 +116,48 @@ pub mod osc {
     pub const FRAME_SPREAD: u16 = 34;
 }
 
+/// The sub oscillator's own parameters, after the channel's (engine-core
+/// section 5).
+pub mod sub {
+    /// Octave, −4 to +4 (R40).
+    pub const OCTAVE: u16 = 16;
+    /// Sweep, −64 to +64 semitones, continuous (R40).
+    pub const SWEEP: u16 = 17;
+    /// Shape: Sine, Rounded square, Triangle, Saw, Square, Pulse (R40).
+    pub const SHAPE: u16 = 18;
+    /// Phase, 0 to 360 degrees: where a note starts (R41).
+    pub const PHASE: u16 = 19;
+    /// Continue phase: a note carries on from the last one's phase (R41).
+    pub const CONTINUE_PHASE: u16 = 20;
+    /// Wrap phase: phase modulated past 360° wraps (R42).
+    pub const WRAP_PHASE: u16 = 21;
+    /// Key tracking; off plays MIDI note 60 (R5).
+    pub const KEY_TRACK: u16 = 22;
+}
+
+/// The noise oscillator's own parameters, after the channel's (engine-core
+/// section 6).
+pub mod noise {
+    /// Source: the colour noise it plays (R49).
+    pub const SOURCE: u16 = 16;
+    /// Loop: one-shot stops at the end of the block, Loop wraps (R48).
+    pub const LOOP: u16 = 17;
+    /// Start, 0 to 100 % of the block (R47).
+    pub const START: u16 = 18;
+    /// Start random, 0 to 100 %: spread each note's start (R47).
+    pub const START_RANDOM: u16 = 19;
+    /// Rate, 0 to 100 %, 50 % the block's original speed (R46).
+    pub const RATE: u16 = 20;
+    /// Fine, −1 to +1: a fine detune of the playback speed (R46).
+    pub const FINE: u16 = 21;
+    /// Key tracking: the pitch follows the note (R46).
+    pub const KEY_TRACK: u16 = 22;
+    /// Stereo, 0 to 100 %, for the colour noises (R49).
+    pub const STEREO: u16 = 23;
+    /// Tone, low-passed at 0, flat at 50, high-passed at 100 (R49).
+    pub const TONE: u16 = 24;
+}
+
 /// A filter's parameters (engine-core sections 7 and 8).
 pub mod filter {
     /// On or off; a filter that's off passes its input on (R9).
@@ -417,6 +459,20 @@ pub const BUS_OUTPUTS: [&str; 3] = ["Main", "Dry out", "Other bus"];
 pub const QUALITIES: [&str; 3] = ["Good", "High", "Ultra"];
 /// A new patch's quality: High (observed, engine-core section 15).
 pub const DEFAULT_QUALITY: usize = 1;
+/// The sub's shapes, in the order the Shape control lists them (R40).
+pub const SUB_SHAPES: [&str; 6] = [
+    "Sine",
+    "Rounded square",
+    "Triangle",
+    "Saw",
+    "Square",
+    "Pulse",
+];
+/// The colour noises the noise oscillator can play, in the order the
+/// Source control lists them (R49).
+pub const NOISE_SOURCES: [&str; 4] = ["White", "Pink", "Brown", "Crackle"];
+/// A new patch's noise source: White (Reagent's own library, R49).
+pub const DEFAULT_NOISE_SOURCE: usize = 0;
 
 /// The synced LFO divisions, by the index the kit's `Division` takes.
 pub const DIVISIONS: [&str; 15] = [
@@ -696,20 +752,113 @@ pub fn oscillator() -> ModuleType {
         )
 }
 
-/// The sub oscillator's module: its mixer channel so far.
+/// The sub oscillator's module (engine-core section 5).
 #[must_use]
 pub fn sub() -> ModuleType {
+    use sub::*;
     channel_params(
         ModuleType::new(SUB, "sub", "Osc"),
         75.0,
         "the sub oscillator",
     )
+    .param(
+        ParamDescriptor::integer(n(OCTAVE), "Octave", (-4, 4), 0, ParamUnit::None)
+            .describe("Transposes the sub by whole octaves."),
+    )
+    .param(
+        ParamDescriptor::continuous(n(SWEEP), "Sweep", (-64.0, 64.0), 0.0, ParamUnit::Semitones)
+            .describe("Transposes the sub continuously, up to 64 semitones either way."),
+    )
+    .param(choice(
+        SHAPE,
+        "Shape",
+        &SUB_SHAPES,
+        0,
+        "The sub's fixed waveform.",
+    ))
+    .param(
+        ParamDescriptor::continuous(n(PHASE), "Phase", (0.0, 360.0), 0.0, ParamUnit::None)
+            .describe("Where in the shape a note starts, in degrees."),
+    )
+    .param(toggle(
+        CONTINUE_PHASE,
+        "Continue phase",
+        false,
+        "Whether each note carries on from the last note's phase instead of starting at Phase.",
+    ))
+    .param(toggle(
+        WRAP_PHASE,
+        "Wrap phase",
+        false,
+        "Whether phase modulated past 360° wraps around; off, it stays at 360°.",
+    ))
+    .param(toggle(
+        KEY_TRACK,
+        "Key track",
+        true,
+        "Whether the sub follows the played note. Off, it plays MIDI note 60 (261.63 Hz).",
+    ))
 }
 
-/// The noise oscillator's module: its mixer channel so far.
+/// The noise oscillator's module (engine-core section 6).
 #[must_use]
 pub fn noise() -> ModuleType {
+    use noise::*;
     channel_params(ModuleType::new(NOISE, "noise", "Osc"), 25.0, "the noise")
+        .param(choice(
+            SOURCE,
+            "Source",
+            &NOISE_SOURCES,
+            DEFAULT_NOISE_SOURCE,
+            "Which noise plays: Reagent's own White, Pink, Brown or Crackle.",
+        ))
+        .param(choice(
+            LOOP,
+            "Loop",
+            &["One-shot", "Loop"],
+            1,
+            "Whether playback wraps at the end of the noise or stops there.",
+        ))
+        .param(percent(
+            START,
+            "Start",
+            0.0,
+            "Where playback starts in the noise.",
+        ))
+        .param(percent(
+            START_RANDOM,
+            "Start random",
+            0.0,
+            "How far each note's start is spread, so chords don't repeat the same noise.",
+        ))
+        .param(percent(
+            RATE,
+            "Rate",
+            50.0,
+            "The playback speed; 50 % is the noise's original speed.",
+        ))
+        .param(
+            ParamDescriptor::continuous(n(FINE), "Fine", (-1.0, 1.0), 0.0, ParamUnit::None)
+                .describe("Detunes the playback speed finely, in semitones."),
+        )
+        .param(toggle(
+            KEY_TRACK,
+            "Key track",
+            false,
+            "Whether the playback speed follows the played note.",
+        ))
+        .param(percent(
+            STEREO,
+            "Stereo",
+            0.0,
+            "For the colour noises: mono at 0 %, two uncorrelated channels at 100 %.",
+        ))
+        .param(percent(
+            TONE,
+            "Tone",
+            50.0,
+            "For the colour noises: low-passed at 0 %, flat at 50 %, high-passed at 100 %.",
+        ))
 }
 
 /// The filter module.
