@@ -67,6 +67,7 @@ Reagent depends on the [plug-in kit](https://github.com/loombridge/plugin-kit) b
    lspk-params = { path = "plugin-kit/crates/params" }
    lspk-plugin = { path = "plugin-kit/crates/plugin" }
    lspk-plugin-agent = { path = "plugin-kit/crates/plugin-agent" }
+   lspk-presets = { path = "plugin-kit/crates/presets" }
    lspk-rt = { path = "plugin-kit/crates/rt" }
    lspk-standalone = { path = "plugin-kit/crates/standalone" }
    lspk-test = { path = "plugin-kit/crates/test" }
