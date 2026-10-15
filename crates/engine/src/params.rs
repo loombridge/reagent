@@ -316,6 +316,9 @@ pub mod global {
     pub const MPE_BEND: ParamId = ParamId(33);
     /// Velocity legato (R101).
     pub const VELOCITY_LEGATO: ParamId = ParamId(34);
+    /// Curve glide: whether a legato note moves the velocity and key curves
+    /// to its values over the glide time (R100).
+    pub const CURVE_GLIDE: ParamId = ParamId(38);
     /// Reference pitch: frequency of A4, 430 to 450 Hz in whole hertz (R136).
     pub const REFERENCE_PITCH: ParamId = ParamId(35);
     /// Envelope scale: multiplies every envelope's times, 10 % to 1000 % (R80).
@@ -1274,6 +1277,10 @@ fn globals() -> Vec<ParamDescriptor> {
             .describe("A note's full pitch bend with MPE on."),
         ParamDescriptor::toggle(VELOCITY_LEGATO, "Velocity legato", false)
             .describe("Whether a legato note updates its voice's velocity."),
+        ParamDescriptor::toggle(CURVE_GLIDE, "Curve glide", false).describe(
+            "Whether a note played over a held one moves the velocity and key curves to its \
+             values over the glide time.",
+        ),
         ParamDescriptor::integer(
             REFERENCE_PITCH,
             "Reference pitch",

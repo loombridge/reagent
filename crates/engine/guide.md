@@ -16,7 +16,7 @@ Then the **buses** go to Main, Dry out or each other, and **Main level** (−9 d
 
 ## Modulation
 
-Four envelopes (`Env 1` is also the amplifier), ten LFOs (synced to the tempo by default, a quarter note, restarting at each note), eight macros, velocity, the key, the mod wheel, pitch bend, pressure and more modulate any continuous parameter through the 64-slot matrix. Its commands are in the `mod` area: `mod.add_route` takes a source key (`env2`, `lfo1`, `velocity`, `macro1`, `mod_wheel`, ...), a destination (`{"param": <ID>}`, the ID `query` shows) and an amount from −1 to 1 of the destination's whole travel; `"polarity": "bipolar"` swings around the control's position instead of adding upward. `mod.list` shows the routes.
+Four envelopes (`Env 1` is also the amplifier), ten LFOs (synced to the tempo by default, a quarter note, restarting at each note), eight macros, velocity, the key, the mod wheel, pitch bend, pressure and more modulate any continuous parameter through the 64-slot matrix. Its commands are in the `mod` area: `mod.add_route` takes a source key (`env2`, `lfo1`, `velocity`, `macro1`, `mod_wheel`, ...), a destination (`{"param": <ID>}`, the ID `query` shows) and an amount from −1 to 1 of the destination's whole travel; `"polarity": "bipolar"` swings around the control's position instead of adding upward. `mod.list` shows the routes. `reagent.set_note_curve` redraws the velocity or the key curve, the graph a note's velocity or number is mapped through before it reaches the matrix; `reagent.swap_macros` exchanges two macros' routes, and `reagent.apply_macros` adds each macro's current offset into the parameters it drives and then removes the macro routes.
 
 ## Getting good results
 

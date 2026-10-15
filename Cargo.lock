@@ -2250,6 +2250,8 @@ dependencies = [
  "lspk-test",
  "lspk-ui",
  "reagent-engine",
+ "schemars",
+ "serde",
  "serde_json",
 ]
 
