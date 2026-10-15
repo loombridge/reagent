@@ -195,6 +195,32 @@ fn modulation(modeng: &ModEngine, dest: Option<DestId>) -> Mod<'_> {
     }
 }
 
+/// Fills `buf[..n * S]` with destination `dest`'s value at every host frame
+/// of the stretch and voice: an audio-rate destination's own value, a
+/// control-rate one's ramp between ticks, so a value the ear follows per
+/// frame never steps (engine-core R1.13).
+fn fill_ramp(modeng: &ModEngine, buf: &mut [f32], dest: Option<DestId>, n: usize, span: usize) {
+    let mut one = [0.0f32; CHUNK];
+    match modulation(modeng, dest) {
+        Mod::None => {}
+        Mod::Audio(a) => {
+            for t in 0..n {
+                for v in 0..span {
+                    buf[t * S + v] = a.at(t, v);
+                }
+            }
+        }
+        Mod::Control(c) => {
+            for v in 0..span {
+                c.ramp(v, &mut one[..n]);
+                for t in 0..n {
+                    buf[t * S + v] = one[t];
+                }
+            }
+        }
+    }
+}
+
 /// Writes a source's audio for the matrix into the current period of its
 /// ring: `read(j, v)` is voice `v` at frame `j` of the stretch at the
 /// quality's rate, and every `factor`th frame is kept.
@@ -405,6 +431,9 @@ struct Synth {
     pitch_step: Vec<f32>,
     pitch_mod: Vec<f32>,
     frame_mod: Vec<f32>,
+    /// One control-rate destination's values at every host frame of the
+    /// stretch, per voice: its ramp between ticks (never a step).
+    ramp_buf: Vec<f32>,
     /// An oscillator's copies mixed to a stereo pair per voice.
     uni_out: Vec<f32>,
     // Audio-rate buffers for one stretch.
@@ -625,6 +654,7 @@ impl Engine {
             pitch_step: vec![0.0; LANES],
             pitch_mod: vec![0.0; OS_CHUNK * LANES],
             frame_mod: vec![0.0; OS_CHUNK * LANES],
+            ramp_buf: vec![0.0; CHUNK * S],
             osc_out: vec![0.0; OS_CHUNK * LANES],
             uni_out: vec![0.0; OS_CHUNK * 2 * S],
             fin: std::array::from_fn(|_| vec![0.0; OS_CHUNK * 2 * S]),
@@ -1565,14 +1595,17 @@ impl Synth {
                         }
                     }
                 }
-                // Frame.
-                let frame_mod = modulation(&self.modeng, self.values.dest(p(osc::FRAME)));
-                if frame_mod.is_some() {
+                // Frame, read once a host frame: at control rate its route's
+                // ramp between ticks, so the frame never steps.
+                let frame_dest = self.values.dest(p(osc::FRAME));
+                let has_frame = modulation(&self.modeng, frame_dest).is_some();
+                if has_frame {
+                    fill_ramp(&self.modeng, &mut self.ramp_buf, frame_dest, n, span);
                     let base = self.values.get(p(osc::FRAME)) as f32;
                     let frames = self.table_frames.max(1) as f32 - 1.0;
                     for j in 0..os_n {
                         for v in 0..span {
-                            let pos = frame_mod.at(j / k, v).unwrap_or(0.0);
+                            let pos = self.ramp_buf[(j / k) * S + v];
                             let real = self.values.real(p(osc::FRAME), pos);
                             let row = j * lane_count + v * copies;
                             self.frame_mod[row..row + copies].fill((real - base) / 100.0 * frames);
@@ -1584,9 +1617,7 @@ impl Synth {
                     pitch: &self.lane_pitch,
                     pitch_step: Some(&self.pitch_step),
                     pitch_mod: any_pitch.then_some(&self.pitch_mod[..os_n * lane_count]),
-                    frame_mod: frame_mod
-                        .is_some()
-                        .then_some(&self.frame_mod[..os_n * lane_count]),
+                    frame_mod: has_frame.then_some(&self.frame_mod[..os_n * lane_count]),
                 };
                 {
                     let unit = &mut self.units[s][copies - 1];
@@ -1624,7 +1655,8 @@ impl Synth {
                 }
                 let pitch_mods = [sub::OCTAVE, sub::SWEEP]
                     .map(|m| (m, modulation(&self.modeng, self.values.dest(p(m)))));
-                let phase_mod = modulation(&self.modeng, self.values.dest(p(sub::PHASE)));
+                let phase_dest = self.values.dest(p(sub::PHASE));
+                let has_phase = modulation(&self.modeng, phase_dest).is_some();
                 let any_pitch = pitch_mods.iter().any(|(_, m)| m.is_some())
                     || tuning_mod.is_some()
                     || self.tuning != 0.0;
@@ -1656,13 +1688,14 @@ impl Synth {
                         }
                     }
                 }
-                if phase_mod.is_some() {
+                if has_phase {
+                    fill_ramp(&self.modeng, &mut self.ramp_buf, phase_dest, n, span);
                     let base = self.values.get(p(sub::PHASE)) as f32;
                     for t in 0..n {
                         for v in 0..span {
-                            let offset = phase_mod.at(t, v).map_or(0.0, |pos| {
-                                (self.values.real(p(sub::PHASE), pos) - base) / 360.0
-                            });
+                            let offset =
+                                (self.values.real(p(sub::PHASE), self.ramp_buf[t * S + v]) - base)
+                                    / 360.0;
                             for i in 0..k {
                                 self.frame_mod[(t * k + i) * S + v] = offset;
                             }
@@ -1674,7 +1707,7 @@ impl Synth {
                     pitch: &self.lane_pitch,
                     pitch_step: Some(&self.pitch_step),
                     pitch_mod: any_pitch.then_some(&self.pitch_mod[..os_n * S]),
-                    phase_mod: phase_mod.is_some().then_some(&self.frame_mod[..os_n * S]),
+                    phase_mod: has_phase.then_some(&self.frame_mod[..os_n * S]),
                 };
                 let mut params = self.sub_params;
                 params.level = if level_mod.is_some() { 100.0 } else { ch.level };
@@ -1704,14 +1737,15 @@ impl Synth {
                         .at(0, 0)
                         .map_or(base, |pos| self.values.real(p(param), pos) * scale)
                 };
-                let start_mod = modulation(&self.modeng, self.values.dest(p(noise::START)));
-                if start_mod.is_some() {
+                let start_dest = self.values.dest(p(noise::START));
+                let has_start = modulation(&self.modeng, start_dest).is_some();
+                if has_start {
+                    fill_ramp(&self.modeng, &mut self.ramp_buf, start_dest, n, span);
                     let base = self.values.get(p(noise::START)) as f32;
                     for t in 0..n {
                         for v in 0..span {
-                            let offset = start_mod
-                                .at(t, v)
-                                .map_or(0.0, |pos| self.values.real(p(noise::START), pos) - base);
+                            let offset =
+                                self.values.real(p(noise::START), self.ramp_buf[t * S + v]) - base;
                             for i in 0..k {
                                 self.frame_mod[(t * k + i) * S + v] = offset;
                             }
@@ -1722,7 +1756,7 @@ impl Synth {
                     lanes: span,
                     pitch: &self.lane_pitch,
                     pitch_step: Some(&self.pitch_step),
-                    start_mod: start_mod.is_some().then_some(&self.frame_mod[..os_n * S]),
+                    start_mod: has_start.then_some(&self.frame_mod[..os_n * S]),
                 };
                 let base = self.noise_params;
                 let params = lspk_wavetable::noise::Params {
