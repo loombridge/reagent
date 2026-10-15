@@ -56,8 +56,27 @@ pub fn summary(
         text.push_str(&format!(", to {}", output.to_lowercase()));
         playing.push(text);
     }
+    if on(params::id(params::SUB, 0, channel::ON)) {
+        let p = |param: u16| params::id(params::SUB, 0, param);
+        let shape = params::SUB_SHAPES[(get(p(crate::params::sub::SHAPE)).round() as usize).min(5)];
+        playing.push(format!(
+            "the sub, a {shape}, at {:.0} % level, to {}",
+            get(p(channel::LEVEL)),
+            CHANNEL_OUTPUTS[(get(p(channel::OUTPUT)).round() as usize).min(3)].to_lowercase()
+        ));
+    }
+    if on(params::id(params::NOISE, 0, channel::ON)) {
+        let p = |param: u16| params::id(params::NOISE, 0, param);
+        let source =
+            params::NOISE_SOURCES[(get(p(crate::params::noise::SOURCE)).round() as usize).min(3)];
+        playing.push(format!(
+            "the noise, {source}, at {:.0} % level, to {}",
+            get(p(channel::LEVEL)),
+            CHANNEL_OUTPUTS[(get(p(channel::OUTPUT)).round() as usize).min(3)].to_lowercase()
+        ));
+    }
     if playing.is_empty() {
-        parts.push("No oscillator is on, so the patch is silent.".to_owned());
+        parts.push("No source is on, so the patch is silent.".to_owned());
     } else {
         parts.push(format!(
             "A wavetable synthesiser playing {}.",

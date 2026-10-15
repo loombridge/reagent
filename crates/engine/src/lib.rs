@@ -11,15 +11,17 @@
 //! | [`describe`] | A patch in prose, and the guide for agents |
 //!
 //! The signal path, per voice: oscillators A, B and C (wavetable, from
-//! `lspk-wavetable`), the sub and the noise (placeholders until R1.8), each
-//! with its level, pan and output (the filters, split by Filter balance;
-//! Main; Dry out; or None) and two bus sends; two filters (`lspk-dsp`) each
-//! routed to the other filter, Main, Dry out or None, with sends; Env 1 and
-//! Amp where the signal leaves the voice. Then, for the whole instrument,
-//! the two buses into Main, Dry out or each other, and Main and Dry out to
-//! the output. Four envelopes, ten LFOs and a 64-slot modulation matrix
-//! (`lspk-mod`) move it; voicing and glide come from `lspk-voice`; the
-//! voice path runs at 1, 2 or 4 times the host's rate (Quality).
+//! `lspk-wavetable`), the sub and the noise (the kit's sub and noise
+//! oscillators, R1.8: six fixed shapes, and a sample player over Reagent's
+//! own colour blocks), each with its level, pan and output (the filters,
+//! split by Filter balance; Main; Dry out; or None) and two bus sends; two
+//! filters (`lspk-dsp`) each routed to the other filter, Main, Dry out or
+//! None, with sends; Env 1 and Amp where the signal leaves the voice. Then,
+//! for the whole instrument, the two buses into Main, Dry out or each
+//! other, and Main and Dry out to the output. Four envelopes, ten LFOs and
+//! a 64-slot modulation matrix (`lspk-mod`) move it; voicing and glide come
+//! from `lspk-voice`; the voice path runs at 1, 2 or 4 times the host's
+//! rate (Quality).
 //!
 //! Rules cited as "engine-core Rn" are the engine specification's.
 
