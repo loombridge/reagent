@@ -13,6 +13,7 @@ use lspk_test::render::{Instance, Script, Settings};
 use reagent::Reagent;
 use reagent::patches::{self, Patch};
 use reagent_engine::Registry;
+use reagent_engine::params::global;
 
 lspk_rt::install_trap!();
 
@@ -93,5 +94,33 @@ fn a_run_of_parameter_changes_renders_as_the_patch_it_sets() {
         at_once.same_bits(&spread),
         "the run differs by up to {:.1} dBFS",
         measure::db(at_once.max_difference(&spread))
+    );
+}
+
+// Spec: engine-core R1.17 (a voicing setting the voice manager reads before
+// a note — mono, the voice limit, stealing — lands ahead of a note at the
+// same time as its change; only the modules wait for the next render).
+#[test]
+fn a_voicing_change_and_a_note_at_the_same_time_render_as_the_change_set_first() {
+    let frames = (0.5 * RATE) as usize;
+    // The change set before the instance plays anything.
+    let mut mono = patches::init();
+    mono.params.push((global::MONO, 1.0));
+    let before = instance(&mono)
+        .render(&Script::new(frames).note_on(0, 48, 1.0).note_on(0, 60, 1.0))
+        .output;
+    // The change arriving as an event at the same frame as the notes.
+    let with_notes = instance(&patches::init())
+        .render(
+            &Script::new(frames)
+                .param(0, global::MONO, 1.0)
+                .note_on(0, 48, 1.0)
+                .note_on(0, 60, 1.0),
+        )
+        .output;
+    assert!(
+        before.same_bits(&with_notes),
+        "the change beside the notes differs from it set first by up to {:.1} dBFS",
+        measure::db(before.max_difference(&with_notes))
     );
 }

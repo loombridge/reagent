@@ -2288,14 +2288,19 @@ impl VoiceHandler for Synth {
         }
     }
 
-    fn event(&mut self, _voices: &mut VoiceBlock, event: Event) {
+    fn event(&mut self, voices: &mut VoiceBlock, event: Event) {
         // Only marks what changed: the modules are rebuilt once, at the
         // start of the next render or voice event, so a preset load — every
         // value the host sends in one block — costs one rebuild, not one
-        // per value.
+        // per value. A voicing setting cannot wait that long: the voice
+        // manager reads it before it calls back, so a note at this time
+        // would miss the change, and it rebuilds now.
         if let Event::Param { id, value, .. } = event {
             let time = self.block_frame as u32;
             self.set_param(id, value, time);
+            if dirty_bit(id) & dirty::VOICE != 0 {
+                self.rebuild(voices.settings_mut());
+            }
         }
     }
 }
