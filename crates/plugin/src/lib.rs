@@ -16,6 +16,7 @@
 use std::sync::Arc;
 
 use lspk_commands::{CommandSpec, Context, NoArgs, Permission};
+use lspk_mod::curve::CurvePoint;
 use lspk_mod::{Matrix, ProgramSender, mailbox};
 use lspk_params::{ParamDescriptor, ParamSpace};
 use lspk_plugin::{
@@ -23,9 +24,11 @@ use lspk_plugin::{
     RegisterError, Registry as Commands, features,
 };
 use reagent_engine::engine::{self, Engine, mod_config};
-use reagent_engine::modulation::{self, Needs, Registry};
+use reagent_engine::modulation::{self, Needs, NoteCurve, Registry};
 use reagent_engine::params::global;
 use reagent_engine::{describe, table};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 pub mod patches;
 
@@ -38,6 +41,68 @@ pub const NAME: &str = "Reagent";
 /// The command that puts the Init patch back: every parameter at its
 /// default and the modulation matrix empty.
 pub const INIT_PATCH: &str = "reagent.init_patch";
+/// The command that redraws the velocity or the key curve.
+pub const SET_NOTE_CURVE: &str = "reagent.set_note_curve";
+/// The command that swaps two macros' routes.
+pub const SWAP_MACROS: &str = "reagent.swap_macros";
+/// The command that applies and deletes the macros.
+pub const APPLY_MACROS: &str = "reagent.apply_macros";
+
+/// The arguments of [`SET_NOTE_CURVE`].
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SetNoteCurveArgs {
+    /// Which curve, `velocity` or `key`.
+    which: WhichCurve,
+    /// Its points, x and y from 0 to 1 in order, each with the bend of the
+    /// segment after it, −1 to 1 (0 straight).
+    points: Vec<CurvePoint>,
+}
+
+/// One of the two note curves.
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum WhichCurve {
+    /// The curve note-on velocity is mapped through (engine-core R99).
+    Velocity,
+    /// The key curve the note number is mapped through.
+    Key,
+}
+
+impl From<WhichCurve> for NoteCurve {
+    fn from(which: WhichCurve) -> Self {
+        match which {
+            WhichCurve::Velocity => Self::Velocity,
+            WhichCurve::Key => Self::Key,
+        }
+    }
+}
+
+/// The arguments of [`SWAP_MACROS`].
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SwapMacrosArgs {
+    /// The first macro, 1 to 8.
+    first: usize,
+    /// The second.
+    second: usize,
+}
+
+/// How many slots [`SWAP_MACROS`] moved.
+#[derive(Serialize, JsonSchema)]
+pub struct SwapMacrosResult {
+    /// The slots whose source or aux changed macro.
+    swapped: usize,
+}
+
+/// What [`APPLY_MACROS`] changed.
+#[derive(Serialize, JsonSchema)]
+pub struct ApplyMacrosResult {
+    /// How many parameters the macros' offsets moved.
+    parameters: usize,
+    /// How many macro routes were removed.
+    removed: usize,
+}
 
 /// Every parameter, in the order hosts list them.
 #[must_use]
@@ -88,8 +153,21 @@ impl Reagent {
         &self.registry
     }
 
+    /// Copies the note curves' switches from the parameters into the matrix,
+    /// which compiles them: true when one moved (engine-core R100, R101).
+    fn sync_note_curves(&mut self) -> bool {
+        let on = |id| self.host.param(id).unwrap_or(0.0) >= 0.5;
+        let (glide, legato) = (on(global::CURVE_GLIDE), on(global::VELOCITY_LEGATO));
+        let curves = &mut self.matrix.note_curves;
+        let changed = curves.glide != glide || curves.velocity_legato != legato;
+        curves.glide = glide;
+        curves.velocity_legato = legato;
+        changed
+    }
+
     /// Compiles the matrix and hands it to the audio thread, if it runs.
     fn send_matrix(&mut self) {
+        self.sync_note_curves();
         let Some((sender, rate)) = self.sender.as_mut() else {
             return;
         };
@@ -148,6 +226,7 @@ impl Plugin for Reagent {
         values: &ParamValues,
     ) -> Result<Engine, PluginError> {
         let (mut sender, receiver) = mailbox();
+        self.sync_note_curves();
         let program = self
             .registry
             .compile(&self.matrix, mod_config(config.sample_rate));
@@ -183,6 +262,14 @@ impl Plugin for Reagent {
         Ok(())
     }
 
+    fn on_main_thread(&mut self) {
+        // The note curves' switches live in the matrix, which the main
+        // thread compiles; a host's change to them takes a new program.
+        if self.sync_note_curves() {
+            self.send_matrix();
+        }
+    }
+
     fn latency(&self) -> u32 {
         let quality = self
             .host
@@ -212,18 +299,56 @@ impl Plugin for Reagent {
 
     fn register_commands(&self, registry: &mut Commands) -> Result<(), RegisterError> {
         lspk_mod::register(registry)?;
-        registry.register(
+        for spec in [
             CommandSpec::new(INIT_PATCH, "Init Patch")
                 .description(
                     "Puts the Init patch back: every parameter at its default (oscillator A, a \
-                     saw, through Filter 1, which is off) and the modulation matrix empty. The \
-                     host records each parameter change like a person's.",
+                     saw, through Filter 1, which is off), the modulation matrix empty and the \
+                     velocity and key curves back to the diagonal. The host records each \
+                     parameter change like a person's.",
                 )
                 .permission(Permission::Edit)
                 .context(Context::Global)
                 .args::<NoArgs>()
                 .result::<()>(),
-        )
+            CommandSpec::new(SET_NOTE_CURVE, "Set Note Curve")
+                .description(
+                    "Redraws the velocity or the key curve, the graph a note's velocity or note \
+                     number is mapped through before it reaches the matrix (`velocity` and `key` \
+                     sources). It changes the patch. Points left out leave the curve as `Init \
+                     Patch` sets it, the diagonal.",
+                )
+                .permission(Permission::Edit)
+                .context(Context::Global)
+                .args::<SetNoteCurveArgs>()
+                .result::<()>(),
+            CommandSpec::new(SWAP_MACROS, "Swap Macros")
+                .description(
+                    "Swaps two macros' routes (the macros are numbered 1 to 8, as they are \
+                     named): every route whose source or aux is one macro takes the other, and \
+                     the other way round. The macros' own values stay where they are. It changes \
+                     the patch, and returns how many slots moved.",
+                )
+                .permission(Permission::Edit)
+                .context(Context::Global)
+                .args::<SwapMacrosArgs>()
+                .result::<SwapMacrosResult>(),
+            CommandSpec::new(APPLY_MACROS, "Apply and Delete Macros")
+                .description(
+                    "Bakes the macros into the patch: adds each macro route's current offset \
+                     into the parameter it drives, then removes every route whose source is a \
+                     macro. A route's offset is the macro's own contribution, its curve at the \
+                     macro's value through its polarity, amount and output. The host records \
+                     each parameter change like a person's.",
+                )
+                .permission(Permission::Edit)
+                .context(Context::Global)
+                .args::<NoArgs>()
+                .result::<ApplyMacrosResult>(),
+        ] {
+            registry.register(spec)?;
+        }
+        Ok(())
     }
 
     fn run_command(
@@ -242,6 +367,62 @@ impl Plugin for Reagent {
             self.host.mark_dirty();
             return Ok(serde_json::Value::Null);
         }
+        if id == SET_NOTE_CURVE {
+            let args: SetNoteCurveArgs = arguments(args)?;
+            modulation::set_note_curve(&mut self.matrix, args.which.into(), &args.points);
+            self.send_matrix();
+            self.host.mark_dirty();
+            return Ok(serde_json::Value::Null);
+        }
+        if id == SWAP_MACROS {
+            let args: SwapMacrosArgs = arguments(args)?;
+            if !(1..=params::MACROS).contains(&args.first)
+                || !(1..=params::MACROS).contains(&args.second)
+            {
+                return Err(PluginError::new(format!(
+                    "macros are numbered 1 to {}",
+                    params::MACROS
+                )));
+            }
+            if args.first == args.second {
+                return Err(PluginError::new(
+                    "swapping a macro with itself moves nothing",
+                ));
+            }
+            let swapped = modulation::swap_macros(
+                &mut self.matrix,
+                &self.registry.sources,
+                args.first - 1,
+                args.second - 1,
+            );
+            self.send_matrix();
+            self.host.mark_dirty();
+            return Ok(
+                serde_json::to_value(SwapMacrosResult { swapped }).expect("a serialisable result")
+            );
+        }
+        if id == APPLY_MACROS {
+            let host = &self.host;
+            let apply = modulation::apply_macros(
+                &mut self.matrix,
+                &self.registry.space,
+                &self.registry.sources,
+                &|m| host.param(global::macro_id(m)).unwrap_or(0.0) as f32 / 100.0,
+                &|param| host.param(param),
+            );
+            for (param, value) in &apply.params {
+                self.host
+                    .edit(*param, *value)
+                    .map_err(|e| PluginError::new(e.to_string()))?;
+            }
+            self.send_matrix();
+            self.host.mark_dirty();
+            return Ok(serde_json::to_value(ApplyMacrosResult {
+                parameters: apply.params.len(),
+                removed: apply.removed,
+            })
+            .expect("a serialisable result"));
+        }
         if id.starts_with("mod.") {
             let registry = self.registry.clone();
             let result = self
@@ -256,6 +437,12 @@ impl Plugin for Reagent {
         }
         Err(PluginError::new(format!("no command `{id}`")))
     }
+}
+
+/// The arguments of a command, or why they don't fit.
+fn arguments<T: serde::de::DeserializeOwned>(args: &serde_json::Value) -> Result<T, PluginError> {
+    serde_json::from_value(args.clone())
+        .map_err(|e| PluginError::new(format!("the arguments don't fit: {e}")))
 }
 
 #[cfg(feature = "export")]

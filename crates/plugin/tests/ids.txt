@@ -28,6 +28,7 @@
 0x00000023 param "Reference pitch"
 0x00000024 param "Envelope scale"
 0x00000025 param "LFO scale"
+0x00000026 param "Curve glide"
 0x01000000 osc "A" / param "On"
 0x01000001 osc "A" / param "Level"
 0x01000002 osc "A" / param "Pan"
