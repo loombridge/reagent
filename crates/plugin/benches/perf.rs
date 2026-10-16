@@ -2,7 +2,8 @@
 //! kit's reference patches use: 48 kHz in 128-frame blocks. The Init patch
 //! and the three hand-built patches (`reagent::patches`) each hold 8 and
 //! then 32 notes for a second and release them, for the CPU per voice at
-//! the default quality (High, twice the host's rate).
+//! the default quality (High, twice the host's rate); the empty patch, with
+//! nothing in use, is the floor the compiler's dropping shows against.
 
 use std::process::ExitCode;
 
@@ -26,7 +27,7 @@ fn main() -> ExitCode {
     let settings = Settings::new(f64::from(RATE), 128);
     let registry = Registry::new();
     let mut suite = Suite::new("reagent");
-    for patch in patches::all() {
+    for patch in patches::all().into_iter().chain([patches::empty()]) {
         for voices in [8, 32] {
             let state = patch.clone().with_voices(voices).state(&registry);
             suite.scenario(

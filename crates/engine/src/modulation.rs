@@ -40,8 +40,8 @@ use lspk_params::{ParamAddress, ParamDescriptor, ParamId, ParamKind, ParamSpace}
 use serde::{Deserialize, Serialize};
 
 use crate::params::{
-    self, AMP_ENV, FILTER, LFOS, MACROS, MATRIX, MOD_ENV, NOISE, OSC, SUB, channel, filter, global,
-    osc,
+    self, AMP_ENV, FILTER, LFOS, MACROS, MATRIX, MOD_ENV, NOISE, OSC, SUB, channel, global, noise,
+    osc, sub,
 };
 
 /// The audio sources, in registry order: each main oscillator, the sub,
@@ -81,28 +81,38 @@ pub const fn slot_output(slot: u8) -> ParamId {
     ParamAddress::new(MATRIX, slot, 1).id()
 }
 
-/// Whether parameter `id` is modulated per voice, and at audio rate.
+/// Whether parameter `id` is modulated per voice, and how often its routes
+/// run: audio rate for pitch, phase, amplitude and pan, or for any route
+/// reading an audio source (engine-core R1.13's recorded rule).
 fn scope_and_rate(id: ParamId) -> (bool, Rate) {
     let Some(address) = ParamAddress::of(id) else {
         return (false, Rate::Control);
     };
-    match (address.module, address.param) {
-        // Pitch, amplitude and pan are followed sample by sample.
-        (
-            OSC,
-            osc::OCTAVE | osc::SEMITONE | osc::FINE | osc::SWEEP | channel::LEVEL | channel::PAN,
-        )
-        | (SUB | NOISE, channel::LEVEL | channel::PAN) => (true, Rate::Audio),
-        (FILTER, filter::CUTOFF) => (true, Rate::Adaptive),
+    let (module, param) = (address.module, address.param);
+    // Pitch, phase, amplitude and pan are followed sample by sample: a step
+    // or a lag would be heard.
+    let audio = matches!(
+        (module, param),
+        (OSC, osc::OCTAVE | osc::SEMITONE | osc::FINE | osc::SWEEP)
+            | (SUB, sub::OCTAVE | sub::SWEEP | sub::PHASE)
+            | (NOISE, noise::RATE | noise::FINE)
+            | (OSC | SUB | NOISE, channel::LEVEL | channel::PAN)
+    ) || (module == 0 && (id == global::AMP || id == global::TUNING));
+    let voice = match (module, param) {
         // Unison's controls are the oscillator's, shared by its voices.
         (
             OSC,
             osc::DETUNE | osc::UNISON_MIX | osc::WIDTH | osc::DETUNE_RANGE | osc::FRAME_SPREAD,
-        ) => (false, Rate::Control),
-        (OSC | SUB | NOISE | FILTER | AMP_ENV | MOD_ENV, _) => (true, Rate::Control),
-        (0, _) if id == global::AMP || id == global::TUNING => (true, Rate::Audio),
-        _ => (false, Rate::Control),
-    }
+        ) => false,
+        (OSC | SUB | NOISE | FILTER | AMP_ENV | MOD_ENV, _) => true,
+        (0, _) if id == global::AMP || id == global::TUNING => true,
+        _ => false,
+    };
+    // Everything else is usually smooth but may take audio-rate modulation
+    // (a filter's cutoff from an oscillator, a frame from the noise): audio
+    // rate while a route into it reads an audio source, control rate
+    // otherwise.
+    (voice, if audio { Rate::Audio } else { Rate::Adaptive })
 }
 
 #[derive(Clone, Copy)]
@@ -621,6 +631,7 @@ pub fn load(bytes: &[u8], sources: &Sources, dests: &Destinations) -> Result<Mat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::params::filter;
     use lspk_mod::Polarity;
 
     // Spec: engine-core R102, R111 (64 slots; macros, buses and slot
