@@ -159,8 +159,8 @@ fn inspect_prints_what_a_preset_holds() {
 #[test]
 fn the_benchmark_suite_is_the_performance_targets() {
     let ids = reagent_cli::benchmark::suite().ids();
-    assert_eq!(ids.len(), 4 * 2 * 4);
-    for patch in ["init", "supersaw", "bass", "pad"] {
+    assert_eq!(ids.len(), 6 * 2 * 4);
+    for patch in ["init", "supersaw", "unison16", "bass", "pad", "empty"] {
         for voices in [8, 32] {
             assert!(
                 ids.contains(&format!("reagent/{patch}-{voices}/process")),

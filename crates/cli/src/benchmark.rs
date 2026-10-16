@@ -2,9 +2,9 @@
 //! and printed as the table `cargo bench` prints.
 //!
 //! The suite is the one `crates/plugin/benches/perf.rs` times and `cargo
-//! xtask bench` runs: the Init patch and the three hand-built patches, each
-//! holding 8 and then 32 notes, at 48 kHz in 128-frame blocks. Build the
-//! binary in release for numbers worth keeping.
+//! xtask bench` runs: the Init patch, the hand-built patches and the empty
+//! patch, each holding 8 and then 32 notes, at 48 kHz in 128-frame blocks.
+//! Build the binary in release for numbers worth keeping.
 
 use std::process::ExitCode;
 
@@ -40,7 +40,7 @@ pub fn suite() -> Suite {
     let settings = Settings::new(f64::from(RATE), 128);
     let registry = Registry::new();
     let mut suite = Suite::new("reagent");
-    for patch in patches::all() {
+    for patch in patches::all().into_iter().chain([patches::empty()]) {
         for voices in [8, 32] {
             let state = patch.clone().with_voices(voices).state(&registry);
             suite.scenario(
