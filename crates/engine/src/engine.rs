@@ -407,6 +407,8 @@ struct Synth {
     tuning: f32,
     reference: f32,
     env_scale: f64,
+    /// The tempo the envelopes' timing was built at.
+    env_tempo: f64,
     /// The program this thread runs: what is in use, compiled off this
     /// thread by the plug-in's main thread and swapped at a block's start,
     /// or refreshed here when a host's automation changes it.
@@ -637,6 +639,7 @@ impl Engine {
             tuning: 0.0,
             reference: 440.0,
             env_scale: 1.0,
+            env_tempo: 120.0,
             patch: Patch::default(),
             patch_mailbox: None,
             env_buf: (0..ENVELOPES).map(|_| chunk()).collect(),
@@ -809,6 +812,7 @@ impl Processor for Engine {
             audio.silence();
             return ProcessStatus::Continue;
         }
+        self.synth.set_host_transport(cx.transport());
         let has_events = events.iter().next().is_some();
         if !has_events && self.quiet >= SETTLE_FRAMES && self.voices.block().active_count() == 0 {
             // Asleep: nothing sounds and nothing arrives.
@@ -853,6 +857,16 @@ impl Processor for Engine {
     }
 }
 
+/// Gives every envelope the timing it follows now: this engine's rate, the
+/// tempo of the host or of the engine's own clock, and the global envelope
+/// scale (engine-core R75, R80).
+fn retime_envelopes(envs: &mut [EnvelopeBank], rate: f64, tempo: f64, scale: f64) {
+    let timing = Timing::new(rate).with_tempo(tempo).with_scale(scale);
+    for env in envs {
+        env.set_timing(timing);
+    }
+}
+
 impl Synth {
     /// Takes the patch the plug-in's main thread compiled, if one waits,
     /// and makes it the program this thread runs. The one it replaces goes
@@ -872,6 +886,26 @@ impl Synth {
     /// Keeps time while asleep.
     fn advance_idle(&mut self, frames: usize) {
         self.transport.advance(frames);
+    }
+
+    /// Takes the host's transport for this block: a synced LFO follows its
+    /// tempo (engine-core R85), a song-locked one its position (R84), and a
+    /// tempo-synced envelope its tempo (R75). Without a host transport the
+    /// engine keeps its own clock.
+    fn set_host_transport(&mut self, host: Option<&lspk_plugin::Transport>) {
+        let Some(host) = host else {
+            return;
+        };
+        let tempo = host.tempo;
+        self.transport.tempo = tempo;
+        self.transport.beats_per_bar = host.beats_per_bar;
+        self.transport.playing = host.playing;
+        self.transport.beats = host.beats;
+        self.transport.seconds = host.seconds;
+        if tempo != self.env_tempo {
+            self.env_tempo = tempo;
+            retime_envelopes(&mut self.envs, self.rate, tempo, self.env_scale);
+        }
     }
 
     /// Takes parameter `id`'s new value at frame `time` of the block.
@@ -1185,12 +1219,8 @@ impl Synth {
             let env_scale = f64::from(f32_of(global::ENV_SCALE)) / 100.0;
             if env_scale != self.env_scale {
                 self.env_scale = env_scale;
-                let timing = Timing::new(self.rate)
-                    .with_tempo(self.transport.tempo)
-                    .with_scale(env_scale);
-                for env in &mut self.envs {
-                    env.set_timing(timing);
-                }
+                self.env_tempo = self.transport.tempo;
+                retime_envelopes(&mut self.envs, self.rate, self.transport.tempo, env_scale);
             }
             let lfo_scale = f32_of(global::LFO_SCALE);
             self.transport.scale = lspk_dsp::lfo::Scale::Percent(lfo_scale);
