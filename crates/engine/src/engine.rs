@@ -8,7 +8,8 @@
 //! its 32-frame control points, so each stretch lies inside one control
 //! period. For each stretch the engine:
 //!
-//! 1. applies parameter changes and the voice settings;
+//! 1. takes the patch the plug-in's main thread compiled, if one waits, and
+//!    applies parameter changes and the voice settings;
 //! 2. renders the four envelopes, and the LFOs some route reads, at the
 //!    host's rate;
 //! 3. runs the modulation matrix (`lspk-mod`) over the stretch;
@@ -39,8 +40,9 @@
 //! # Real-time safety
 //!
 //! Everything is allocated in [`Engine::new`]; processing allocates
-//! nothing, locks nothing and never blocks. A new modulation program
-//! arrives through the kit's mailbox at a block's start.
+//! nothing, locks nothing and never blocks. A new modulation program and a
+//! new compiled patch arrive through their mailboxes at a block's start,
+//! and the program one replaces goes back to its sender to be dropped.
 
 use std::sync::Arc;
 
@@ -75,9 +77,8 @@ use crate::params::{
     self, AMP_ENV, BUS, BUSES, ENVELOPES, FILTER, FILTERS, LFO, LFOS, MACROS, MOD_ENV, NOISE, OSC,
     OSCILLATORS, SUB, bus, channel, env, filter, global, lfo, noise, osc, sub,
 };
-use crate::routing::{
-    self, BusOutput, ChannelOutput, FilterOutput, balance_shares, filter_order, pan_gains,
-};
+use crate::patch::{CHANNELS, ChannelState, FilterState, Patch, PatchReceiver};
+use crate::routing::{self, BusOutput, ChannelOutput, FilterOutput, balance_shares, pan_gains};
 
 /// The most voices (engine-core R117).
 pub const MAX_VOICES: usize = lspk_voice::MAX_VOICES;
@@ -194,6 +195,32 @@ fn modulation(modeng: &ModEngine, dest: Option<DestId>) -> Mod<'_> {
     }
 }
 
+/// Fills `buf[..n * S]` with destination `dest`'s value at every host frame
+/// of the stretch and voice: an audio-rate destination's own value, a
+/// control-rate one's ramp between ticks, so a value the ear follows per
+/// frame never steps (engine-core R1.13).
+fn fill_ramp(modeng: &ModEngine, buf: &mut [f32], dest: Option<DestId>, n: usize, span: usize) {
+    let mut one = [0.0f32; CHUNK];
+    match modulation(modeng, dest) {
+        Mod::None => {}
+        Mod::Audio(a) => {
+            for t in 0..n {
+                for v in 0..span {
+                    buf[t * S + v] = a.at(t, v);
+                }
+            }
+        }
+        Mod::Control(c) => {
+            for v in 0..span {
+                c.ramp(v, &mut one[..n]);
+                for t in 0..n {
+                    buf[t * S + v] = one[t];
+                }
+            }
+        }
+    }
+}
+
 /// Writes a source's audio for the matrix into the current period of its
 /// ring: `read(j, v)` is voice `v` at frame `j` of the stretch at the
 /// quality's rate, and every `factor`th frame is kept.
@@ -215,32 +242,7 @@ fn store_ring(
     }
 }
 
-/// What a module's parameters were last turned into, rebuilt when one of
-/// them changes.
-#[derive(Clone, Copy, Debug)]
-struct ChannelState {
-    on: bool,
-    level: f32,
-    pan: f32,
-    output: ChannelOutput,
-    balance: f32,
-    send: [f32; 2],
-    amp_env: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct FilterState {
-    on: bool,
-    /// Cutoff as a pitch, A4 = 69.
-    cutoff: f32,
-    voice: VoiceParams,
-    clean: bool,
-    key_track: bool,
-    output: FilterOutput,
-    send: [f32; 2],
-    amp_env: bool,
-}
-
+/// What a bus's parameters were last turned into.
 #[derive(Clone, Copy, Debug)]
 struct BusState {
     level: f32,
@@ -388,7 +390,7 @@ struct Synth {
     sub_params: lspk_wavetable::sub::Params,
     /// The noise's controls, as last rebuilt.
     noise_params: lspk_wavetable::noise::Params,
-    channels: [ChannelState; OSCILLATORS + 2],
+    channels: [ChannelState; CHANNELS],
     filters: Vec<FilterBank>,
     filter_state: [FilterState; FILTERS],
     buses: [BusState; BUSES],
@@ -407,9 +409,12 @@ struct Synth {
     env_scale: f64,
     /// The tempo the envelopes' timing was built at.
     env_tempo: f64,
-    /// Whether some channel in use has its amp envelope off, so a voice
-    /// lasts until every envelope ends (R10).
-    needs_all_envs: bool,
+    /// The program this thread runs: what is in use, compiled off this
+    /// thread by the plug-in's main thread and swapped at a block's start,
+    /// or refreshed here when a host's automation changes it.
+    patch: Patch,
+    /// Where a newly compiled patch arrives, while the processor is active.
+    patch_mailbox: Option<PatchReceiver>,
 
     // Host-rate buffers for one stretch, `CHUNK × S`.
     env_buf: Vec<Vec<f32>>,
@@ -428,6 +433,9 @@ struct Synth {
     pitch_step: Vec<f32>,
     pitch_mod: Vec<f32>,
     frame_mod: Vec<f32>,
+    /// One control-rate destination's values at every host frame of the
+    /// stretch, per voice: its ramp between ticks (never a step).
+    ramp_buf: Vec<f32>,
     /// An oscillator's copies mixed to a stereo pair per voice.
     uni_out: Vec<f32>,
     // Audio-rate buffers for one stretch.
@@ -603,7 +611,7 @@ impl Engine {
                 balance: -100.0,
                 send: [0.0; 2],
                 amp_env: true,
-            }; OSCILLATORS + 2],
+            }; CHANNELS],
             filters,
             filter_state: [FilterState {
                 on: false,
@@ -632,7 +640,8 @@ impl Engine {
             reference: 440.0,
             env_scale: 1.0,
             env_tempo: 120.0,
-            needs_all_envs: false,
+            patch: Patch::default(),
+            patch_mailbox: None,
             env_buf: (0..ENVELOPES).map(|_| chunk()).collect(),
             lfo_buf: (0..LFOS).map(|_| chunk()).collect(),
             lfo_y_buf: (0..LFOS).map(|_| chunk()).collect(),
@@ -648,6 +657,7 @@ impl Engine {
             pitch_step: vec![0.0; LANES],
             pitch_mod: vec![0.0; OS_CHUNK * LANES],
             frame_mod: vec![0.0; OS_CHUNK * LANES],
+            ramp_buf: vec![0.0; CHUNK * S],
             osc_out: vec![0.0; OS_CHUNK * LANES],
             uni_out: vec![0.0; OS_CHUNK * 2 * S],
             fin: std::array::from_fn(|_| vec![0.0; OS_CHUNK * 2 * S]),
@@ -708,6 +718,13 @@ impl Engine {
         self.voices.block().active_count()
     }
 
+    /// Takes compiled patches from `patches` at each block's start, as the
+    /// plug-in does at activation. Without one, the engine still refreshes
+    /// its own program when a host's automation changes what is in use.
+    pub fn attach_patches(&mut self, patches: PatchReceiver) {
+        self.synth.patch_mailbox = Some(patches);
+    }
+
     fn render_block(
         &mut self,
         audio: &mut Buffers<'_>,
@@ -715,6 +732,7 @@ impl Engine {
         cx: &mut ProcessContext<'_>,
     ) -> ProcessStatus {
         let frames = audio.frames();
+        self.synth.begin_block();
         self.synth.modeng.begin_block();
         self.synth.needed = self.synth.needs.get();
         let factor = self.synth.factor;
@@ -850,6 +868,21 @@ fn retime_envelopes(envs: &mut [EnvelopeBank], rate: f64, tempo: f64, scale: f64
 }
 
 impl Synth {
+    /// Takes the patch the plug-in's main thread compiled, if one waits,
+    /// and makes it the program this thread runs. The one it replaces goes
+    /// back to the sender, which drops it: the audio thread never frees.
+    /// The modules' state — the voices, the phases, the filters' and the
+    /// effects' tails, the envelopes and the LFOs — is untouched, so the
+    /// swap is inaudible.
+    fn begin_block(&mut self) {
+        let Some(mailbox) = self.patch_mailbox.as_mut() else {
+            return;
+        };
+        if let Some(patch) = mailbox.take() {
+            self.patch = patch;
+        }
+    }
+
     /// Keeps time while asleep.
     fn advance_idle(&mut self, frames: usize) {
         self.transport.advance(frames);
@@ -935,7 +968,7 @@ impl Synth {
         let v = &self.values;
         let f32_of = |id: ParamId| v.get(id) as f32;
         let mut any_channel = false;
-        for s in 0..OSCILLATORS + 2 {
+        for s in 0..CHANNELS {
             let bit = match s {
                 0..=2 => dirty::OSC << s,
                 3 => dirty::SUB,
@@ -945,21 +978,13 @@ impl Synth {
                 continue;
             }
             any_channel = true;
+            self.channels[s] = ChannelState::of(s, &|id| v.get(id));
             let (module, instance) = match s {
                 0..=2 => (OSC, s as u8),
                 3 => (SUB, 0),
                 _ => (NOISE, 0),
             };
             let p = |param: u16| params::id(module, instance, param);
-            self.channels[s] = ChannelState {
-                on: v.on(p(channel::ON)),
-                level: f32_of(p(channel::LEVEL)),
-                pan: f32_of(p(channel::PAN)),
-                output: ChannelOutput::from_index(v.get(p(channel::OUTPUT))),
-                balance: f32_of(p(channel::BALANCE)),
-                send: [f32_of(p(channel::SEND_1)), f32_of(p(channel::SEND_2))],
-                amp_env: v.on(p(channel::AMP_ENV)),
-            };
             if s < OSCILLATORS {
                 let frames = self.table_frames.max(1) as f32;
                 let params = lspk_wavetable::osc::Params {
@@ -1055,26 +1080,7 @@ impl Synth {
             any_channel = true;
             let p = |param: u16| params::id(FILTER, f as u8, param);
             let kind = filter_type(v.get(p(filter::TYPE)));
-            let state = FilterState {
-                on: v.on(p(filter::ON)),
-                cutoff: pitch_of(v.get(p(filter::CUTOFF)) as f32, 440.0),
-                voice: VoiceParams {
-                    resonance: f32_of(p(filter::RESONANCE)) / 100.0,
-                    drive: f32_of(p(filter::DRIVE)) / 100.0,
-                    saturation: f32_of(p(filter::CHARACTER)) / 100.0,
-                    character: f32_of(p(filter::CHARACTER)) / 100.0,
-                    stereo_offset: (f32_of(p(filter::STEREO)) - 50.0) / 50.0 * 12.0,
-                    mix: f32_of(p(filter::MIX)) / 100.0,
-                    level: f32_of(p(filter::LEVEL)),
-                    morph_x: f32_of(p(filter::MORPH_X)),
-                    morph_y: f32_of(p(filter::MORPH_Y)),
-                },
-                clean: v.on(p(filter::CLEAN_DRIVE)),
-                key_track: v.on(p(filter::KEY_TRACK)),
-                output: FilterOutput::from_index(v.get(p(filter::OUTPUT))),
-                send: [f32_of(p(filter::SEND_1)), f32_of(p(filter::SEND_2))],
-                amp_env: v.on(p(filter::AMP_ENV)),
-            };
+            let state = FilterState::of(f, &|id| v.get(id));
             let bank = &mut self.filters[f];
             bank.set_type(kind);
             bank.set_clean_drive(state.clean);
@@ -1255,35 +1261,11 @@ impl Synth {
             self.modeng.set_voice_limit(settings.voices);
         }
         if any_channel {
-            self.needs_all_envs = self.channels[..OSCILLATORS + 2].iter().any(|c| {
-                c.on && !c.amp_env && matches!(c.output, ChannelOutput::Main | ChannelOutput::Dry)
-            }) || self.filter_state.iter().any(|f| f.on && !f.amp_env);
+            // What changed here can change what is in use: refresh the
+            // program in place. It allocates nothing, and the modules' state
+            // stays where it is, so no voice, phase or tail is disturbed.
+            self.patch = Patch::compile(&self.channels, &self.filter_state);
         }
-    }
-
-    /// Whether filter `f` takes any signal: from an oscillator, the sub or
-    /// the noise routed to the filters with a share for it, or from the
-    /// other filter.
-    fn filter_fed(&self, f: usize) -> bool {
-        let from_osc = self.channels[..OSCILLATORS + 2].iter().any(|c| {
-            c.on && c.output == ChannelOutput::Filter && {
-                let (s1, s2) = balance_shares(c.balance);
-                if f == 0 { s1 > 0.0 } else { s2 > 0.0 }
-            }
-        });
-        let other = 1 - f;
-        from_osc
-            || (self.filter_state[other].output == FilterOutput::Other
-                && self.filter_fed_direct(other))
-    }
-
-    fn filter_fed_direct(&self, f: usize) -> bool {
-        self.channels[..OSCILLATORS + 2].iter().any(|c| {
-            c.on && c.output == ChannelOutput::Filter && {
-                let (s1, s2) = balance_shares(c.balance);
-                if f == 0 { s1 > 0.0 } else { s2 > 0.0 }
-            }
-        })
     }
 
     /// Renders the envelopes, the LFOs that are needed and the audio
@@ -1577,9 +1559,12 @@ impl Synth {
             }
         }
 
-        for s in 0..OSCILLATORS + 2 {
+        // What this stretch runs: the program's modules, in its order.
+        let patch = self.patch;
+        for &s in patch.channels() {
+            let s = usize::from(s);
             let ch = self.channels[s];
-            if !ch.on || span == 0 {
+            if span == 0 {
                 continue;
             }
             let p = |param: u16| match s {
@@ -1640,14 +1625,17 @@ impl Synth {
                         }
                     }
                 }
-                // Frame.
-                let frame_mod = modulation(&self.modeng, self.values.dest(p(osc::FRAME)));
-                if frame_mod.is_some() {
+                // Frame, read once a host frame: at control rate its route's
+                // ramp between ticks, so the frame never steps.
+                let frame_dest = self.values.dest(p(osc::FRAME));
+                let has_frame = modulation(&self.modeng, frame_dest).is_some();
+                if has_frame {
+                    fill_ramp(&self.modeng, &mut self.ramp_buf, frame_dest, n, span);
                     let base = self.values.get(p(osc::FRAME)) as f32;
                     let frames = self.table_frames.max(1) as f32 - 1.0;
                     for j in 0..os_n {
                         for v in 0..span {
-                            let pos = frame_mod.at(j / k, v).unwrap_or(0.0);
+                            let pos = self.ramp_buf[(j / k) * S + v];
                             let real = self.values.real(p(osc::FRAME), pos);
                             let row = j * lane_count + v * copies;
                             self.frame_mod[row..row + copies].fill((real - base) / 100.0 * frames);
@@ -1659,9 +1647,7 @@ impl Synth {
                     pitch: &self.lane_pitch,
                     pitch_step: Some(&self.pitch_step),
                     pitch_mod: any_pitch.then_some(&self.pitch_mod[..os_n * lane_count]),
-                    frame_mod: frame_mod
-                        .is_some()
-                        .then_some(&self.frame_mod[..os_n * lane_count]),
+                    frame_mod: has_frame.then_some(&self.frame_mod[..os_n * lane_count]),
                 };
                 {
                     let unit = &mut self.units[s][copies - 1];
@@ -1699,7 +1685,8 @@ impl Synth {
                 }
                 let pitch_mods = [sub::OCTAVE, sub::SWEEP]
                     .map(|m| (m, modulation(&self.modeng, self.values.dest(p(m)))));
-                let phase_mod = modulation(&self.modeng, self.values.dest(p(sub::PHASE)));
+                let phase_dest = self.values.dest(p(sub::PHASE));
+                let has_phase = modulation(&self.modeng, phase_dest).is_some();
                 let any_pitch = pitch_mods.iter().any(|(_, m)| m.is_some())
                     || tuning_mod.is_some()
                     || self.tuning != 0.0;
@@ -1731,13 +1718,14 @@ impl Synth {
                         }
                     }
                 }
-                if phase_mod.is_some() {
+                if has_phase {
+                    fill_ramp(&self.modeng, &mut self.ramp_buf, phase_dest, n, span);
                     let base = self.values.get(p(sub::PHASE)) as f32;
                     for t in 0..n {
                         for v in 0..span {
-                            let offset = phase_mod.at(t, v).map_or(0.0, |pos| {
-                                (self.values.real(p(sub::PHASE), pos) - base) / 360.0
-                            });
+                            let offset =
+                                (self.values.real(p(sub::PHASE), self.ramp_buf[t * S + v]) - base)
+                                    / 360.0;
                             for i in 0..k {
                                 self.frame_mod[(t * k + i) * S + v] = offset;
                             }
@@ -1749,7 +1737,7 @@ impl Synth {
                     pitch: &self.lane_pitch,
                     pitch_step: Some(&self.pitch_step),
                     pitch_mod: any_pitch.then_some(&self.pitch_mod[..os_n * S]),
-                    phase_mod: phase_mod.is_some().then_some(&self.frame_mod[..os_n * S]),
+                    phase_mod: has_phase.then_some(&self.frame_mod[..os_n * S]),
                 };
                 let mut params = self.sub_params;
                 params.level = if level_mod.is_some() { 100.0 } else { ch.level };
@@ -1779,14 +1767,15 @@ impl Synth {
                         .at(0, 0)
                         .map_or(base, |pos| self.values.real(p(param), pos) * scale)
                 };
-                let start_mod = modulation(&self.modeng, self.values.dest(p(noise::START)));
-                if start_mod.is_some() {
+                let start_dest = self.values.dest(p(noise::START));
+                let has_start = modulation(&self.modeng, start_dest).is_some();
+                if has_start {
+                    fill_ramp(&self.modeng, &mut self.ramp_buf, start_dest, n, span);
                     let base = self.values.get(p(noise::START)) as f32;
                     for t in 0..n {
                         for v in 0..span {
-                            let offset = start_mod
-                                .at(t, v)
-                                .map_or(0.0, |pos| self.values.real(p(noise::START), pos) - base);
+                            let offset =
+                                self.values.real(p(noise::START), self.ramp_buf[t * S + v]) - base;
                             for i in 0..k {
                                 self.frame_mod[(t * k + i) * S + v] = offset;
                             }
@@ -1797,7 +1786,7 @@ impl Synth {
                     lanes: span,
                     pitch: &self.lane_pitch,
                     pitch_step: Some(&self.pitch_step),
-                    start_mod: start_mod.is_some().then_some(&self.frame_mod[..os_n * S]),
+                    start_mod: has_start.then_some(&self.frame_mod[..os_n * S]),
                 };
                 let base = self.noise_params;
                 let params = lspk_wavetable::noise::Params {
@@ -1934,10 +1923,11 @@ impl Synth {
             }
         }
 
-        // The filters, in series order.
-        let outputs = [self.filter_state[0].output, self.filter_state[1].output];
-        for f in filter_order(outputs) {
-            if !self.filter_fed(f) || span == 0 {
+        // The filters, in the program's order: the ones in use, feeding
+        // first (engine-core R59, R65).
+        for &f in patch.filters() {
+            let f = usize::from(f);
+            if span == 0 {
                 continue;
             }
             let st = self.filter_state[f];
@@ -2194,12 +2184,13 @@ impl Synth {
     /// Ends the released voices whose envelopes have finished.
     fn end_finished(&mut self, voices: &mut VoiceBlock) {
         let gate = voices.gate();
+        let all_envs = self.patch.all_envs();
         let ended: [bool; S] = std::array::from_fn(|v| {
             v < MAX_VOICES
                 && voices.active_mask() & (1 << v) != 0
                 && gate[v] == 0.0
                 && self.envs[0].is_idle(v)
-                && (!self.needs_all_envs || (1..ENVELOPES).all(|e| self.envs[e].is_idle(v)))
+                && (!all_envs || (1..ENVELOPES).all(|e| self.envs[e].is_idle(v)))
         });
         for (v, end) in ended.iter().enumerate() {
             if *end {
@@ -2211,6 +2202,11 @@ impl Synth {
 
 impl VoiceHandler for Synth {
     fn voice_event(&mut self, voices: &mut VoiceBlock, event: VoiceEvent) {
+        // A run of parameter changes at one time is rebuilt once, here,
+        // before the first thing that reads the modules — a voice event or
+        // a render. Rebuilding after each parameter made a preset load,
+        // hundreds of values in one block, cost hundreds of rebuilds.
+        self.rebuild(voices.settings_mut());
         let v = event.voice;
         let time = event.time;
         match event.kind {
@@ -2323,10 +2319,18 @@ impl VoiceHandler for Synth {
     }
 
     fn event(&mut self, voices: &mut VoiceBlock, event: Event) {
+        // Only marks what changed: the modules are rebuilt once, at the
+        // start of the next render or voice event, so a preset load — every
+        // value the host sends in one block — costs one rebuild, not one
+        // per value. A voicing setting cannot wait that long: the voice
+        // manager reads it before it calls back, so a note at this time
+        // would miss the change, and it rebuilds now.
         if let Event::Param { id, value, .. } = event {
             let time = self.block_frame as u32;
             self.set_param(id, value, time);
-            self.rebuild(voices.settings_mut());
+            if dirty_bit(id) & dirty::VOICE != 0 {
+                self.rebuild(voices.settings_mut());
+            }
         }
     }
 }

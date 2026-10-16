@@ -333,6 +333,7 @@ impl Reagent {
         self.matrix.load(&matrix);
         self.slots = slots;
         self.send_matrix();
+        self.recompile();
         self.host.mark_dirty();
         Ok(())
     }
