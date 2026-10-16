@@ -9,7 +9,24 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The plug-in's types, its preset files and its hand-built patches, without a
+# format export or an editor: the CLI drives the engine headlessly.
+reagent = { workspace = true, default-features = false }
 reagent-engine.workspace = true
+# The render harness, the signals and the WAV encoder a headless render uses.
+lspk-test = { workspace = true, default-features = false }
+# The preset reader the `inspect` verb prints from.
+lspk-presets.workspace = true
+# The parameter space, for each value's name, unit and choice.
+lspk-params.workspace = true
+# Scripted notes and parameter events the render harness plays.
+lspk-plugin.workspace = true
+# The allocation trap, installed by a debug build as Beatlayer's CLI does.
+lspk-rt.workspace = true
+# MIDI files for `render`.
+midly = "0.5.3"
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
 
 [lints]
 workspace = true
