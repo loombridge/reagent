@@ -17,7 +17,7 @@ For each patch (`bass`, `pad`, `lead`):
 - the final preview null-tests against the kept render (bit-exact on the platform that made it, below -96 dBFS elsewhere);
 - the analysis fits the description: the bass is low, the pad is wide and its brightness moves, the lead is bright;
 - every command a transcript runs is registered (the check fails on a command that isn't);
-- each kept preset loads in a build of Reagent without its exports or editor, which is how Beatlayer's native devices carry it, and plays notes.
+- each kept preset loads in `reagent-core`, Reagent without its exports or editor, which is how Beatlayer's native devices carry it, and plays notes.
 
 To remake the kept files after a change that moves the sound, run `cargo xtask golden --update` and say why in the pull request.
 

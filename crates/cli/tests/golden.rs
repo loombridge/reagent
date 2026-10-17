@@ -221,9 +221,9 @@ fn a_command_that_is_not_registered_fails_the_coverage_check() {
     assert_eq!(unregistered(&made_up, &registered), ["synth.make_louder"]);
 }
 
-// This crate builds Reagent without its exports and editor, as Beatlayer's
-// native devices do, so loading a preset here is loading it as a native
-// device: each kept preset plays notes.
+// This crate uses `reagent-core`, Reagent without its exports and editor,
+// as Beatlayer's native devices do, so loading a preset here is loading it
+// as a native device: each kept preset plays notes.
 #[test]
 fn each_kept_preset_loads_as_a_native_device_and_plays_a_note() {
     for name in PATCHES {
