@@ -1,0 +1,78 @@
+{
+  "channels": 2,
+  "envelope": {
+    "attack_end_s": 0.51,
+    "end_s": 2.885,
+    "onset_s": 0.0,
+    "peak_dbfs": -8.8,
+    "release_s": 0.08499999999999996
+  },
+  "loudness": {
+    "peak_dbfs": -4.6,
+    "rms_dbfs": -15.0
+  },
+  "pitch": {
+    "cents": -10.0,
+    "hz": 65.01,
+    "note": "C2"
+  },
+  "sample_rate": 48000.0,
+  "seconds": 3.8,
+  "silent": false,
+  "spectrum": {
+    "centroid_hz": 102.0,
+    "centroid_over_time_hz": [
+      85.0,
+      104.0,
+      114.0,
+      131.0
+    ],
+    "octave_bands": [
+      {
+        "dbfs": -44.6,
+        "hz": 31.25
+      },
+      {
+        "dbfs": -17.5,
+        "hz": 62.5
+      },
+      {
+        "dbfs": -19.6,
+        "hz": 125.0
+      },
+      {
+        "dbfs": -26.9,
+        "hz": 250.0
+      },
+      {
+        "dbfs": -34.1,
+        "hz": 500.0
+      },
+      {
+        "dbfs": -41.0,
+        "hz": 1000.0
+      },
+      {
+        "dbfs": -46.2,
+        "hz": 2000.0
+      },
+      {
+        "dbfs": -51.3,
+        "hz": 4000.0
+      },
+      {
+        "dbfs": -61.7,
+        "hz": 8000.0
+      },
+      {
+        "dbfs": -83.8,
+        "hz": 16000.0
+      }
+    ]
+  },
+  "stereo": {
+    "correlation": 1.0,
+    "width": 0.0
+  },
+  "summary": "3.80 s at 48000 Hz, stereo. Peak -4.6 dBFS, RMS -15.0 dBFS. Pitch 65.0 Hz (C2, -10 cents). Spectral centroid 102 Hz; loudest octave band 62.5 Hz (-17.5 dBFS). The spectrum brightens: its centroid goes from 85 Hz to 131 Hz. The two channels are identical (no stereo width). It starts at 0.000 s, reaches its peak at 0.510 s and dies away by 2.88 s, 0.08 s after the last note ends."
+}

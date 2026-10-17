@@ -1,0 +1,163 @@
+{
+  "format": "reagent-preset",
+  "params": [
+    {
+      "id": 22,
+      "value": true
+    },
+    {
+      "id": 23,
+      "value": true
+    },
+    {
+      "id": 26,
+      "value": 35.0
+    },
+    {
+      "id": 16777217,
+      "value": 70.0
+    },
+    {
+      "id": 33554432,
+      "value": true
+    },
+    {
+      "id": 33554433,
+      "value": 85.0
+    },
+    {
+      "id": 67108864,
+      "value": true
+    },
+    {
+      "id": 67108865,
+      "value": "Ladder LP 24"
+    },
+    {
+      "id": 67108866,
+      "value": 240.0
+    },
+    {
+      "id": 67108867,
+      "value": 30.0
+    },
+    {
+      "id": 67108868,
+      "value": 20.0
+    },
+    {
+      "id": 67108874,
+      "value": true
+    },
+    {
+      "id": 100663296,
+      "value": 3.0
+    },
+    {
+      "id": 100663300,
+      "value": 90.0
+    },
+    {
+      "id": 117440512,
+      "value": 1.0
+    },
+    {
+      "id": 117440514,
+      "value": 260.0
+    },
+    {
+      "id": 117440515,
+      "value": 15.0
+    }
+  ],
+  "schema": 1,
+  "state": {
+    "matrix": {
+      "locked": false,
+      "note_curves": {
+        "key": [
+          {
+            "curve": 0.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "curve": 0.0,
+            "x": 1.0,
+            "y": 1.0
+          }
+        ],
+        "velocity": [
+          {
+            "curve": 0.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "curve": 0.0,
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "slots": [
+        {
+          "amount": 0.550000011920929,
+          "aux": null,
+          "aux_curve": {
+            "bend": 0.5
+          },
+          "aux_invert": false,
+          "bypass": false,
+          "destination": {
+            "param": 67108866
+          },
+          "output": 1.0,
+          "polarity": "unipolar",
+          "slot": 0,
+          "source": "env2",
+          "source_curve": {
+            "bend": 0.5
+          }
+        },
+        {
+          "amount": 0.15000000596046448,
+          "aux": null,
+          "aux_curve": {
+            "bend": 0.5
+          },
+          "aux_invert": false,
+          "bypass": false,
+          "destination": {
+            "param": 67108866
+          },
+          "output": 1.0,
+          "polarity": "unipolar",
+          "slot": 1,
+          "source": "velocity",
+          "source_curve": {
+            "bend": 0.5
+          }
+        }
+      ],
+      "version": 1
+    },
+    "oscillators": [
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      },
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      },
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      }
+    ]
+  }
+}

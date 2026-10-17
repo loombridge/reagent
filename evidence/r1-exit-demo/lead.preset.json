@@ -1,0 +1,167 @@
+{
+  "format": "reagent-preset",
+  "params": [
+    {
+      "id": 22,
+      "value": true
+    },
+    {
+      "id": 23,
+      "value": true
+    },
+    {
+      "id": 26,
+      "value": 60.0
+    },
+    {
+      "id": 16777217,
+      "value": 80.0
+    },
+    {
+      "id": 16777243,
+      "value": 3.0
+    },
+    {
+      "id": 16777244,
+      "value": 0.2
+    },
+    {
+      "id": 67108864,
+      "value": true
+    },
+    {
+      "id": 67108865,
+      "value": "SVF LP 24"
+    },
+    {
+      "id": 67108866,
+      "value": 3200.0
+    },
+    {
+      "id": 67108867,
+      "value": 25.0
+    },
+    {
+      "id": 67108868,
+      "value": 10.0
+    },
+    {
+      "id": 100663296,
+      "value": 5.0
+    },
+    {
+      "id": 100663300,
+      "value": 180.0
+    },
+    {
+      "id": 117440514,
+      "value": 400.0
+    },
+    {
+      "id": 117440515,
+      "value": 50.0
+    },
+    {
+      "id": 134283268,
+      "value": false
+    },
+    {
+      "id": 134283270,
+      "value": 5.5
+    },
+    {
+      "id": 134283276,
+      "value": "1/8"
+    }
+  ],
+  "schema": 1,
+  "state": {
+    "matrix": {
+      "locked": false,
+      "note_curves": {
+        "key": [
+          {
+            "curve": 0.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "curve": 0.0,
+            "x": 1.0,
+            "y": 1.0
+          }
+        ],
+        "velocity": [
+          {
+            "curve": 0.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "curve": 0.0,
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "slots": [
+        {
+          "amount": 0.25,
+          "aux": null,
+          "aux_curve": {
+            "bend": 0.5
+          },
+          "aux_invert": false,
+          "bypass": false,
+          "destination": {
+            "param": 67108866
+          },
+          "output": 1.0,
+          "polarity": "unipolar",
+          "slot": 0,
+          "source": "env2",
+          "source_curve": {
+            "bend": 0.5
+          }
+        },
+        {
+          "amount": 0.006000000052154064,
+          "aux": null,
+          "aux_curve": {
+            "bend": 0.5
+          },
+          "aux_invert": false,
+          "bypass": false,
+          "destination": {
+            "param": 19
+          },
+          "output": 1.0,
+          "polarity": "bipolar",
+          "slot": 1,
+          "source": "lfo2",
+          "source_curve": {
+            "bend": 0.5
+          }
+        }
+      ],
+      "version": 1
+    },
+    "oscillators": [
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      },
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      },
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      }
+    ]
+  }
+}

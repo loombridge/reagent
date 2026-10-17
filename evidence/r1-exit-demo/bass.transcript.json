@@ -1,0 +1,220 @@
+{
+ "description": "A deep, round mono bass: a sine sub under a saw, low-passed, with a short filter pluck on every note and a little glide between notes.",
+ "steps": [
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "params.set",
+      "args": {
+       "values": [
+        {
+         "param": "Mono",
+         "value": 1
+        },
+        {
+         "param": "Legato",
+         "value": 1
+        },
+        {
+         "param": "Glide time",
+         "text": "35 ms"
+        },
+        {
+         "param": "osc \"A\" / param \"Level\"",
+         "text": "70 %"
+        },
+        {
+         "param": "osc \"A\" / param \"Output\"",
+         "text": "Filter"
+        },
+        {
+         "param": "sub \"Sub\" / param \"On\"",
+         "value": 1
+        },
+        {
+         "param": "sub \"Sub\" / param \"Level\"",
+         "text": "85 %"
+        },
+        {
+         "param": "filter \"1\" / param \"On\"",
+         "value": 1
+        },
+        {
+         "param": "filter \"1\" / param \"Type\"",
+         "text": "Ladder LP 24"
+        },
+        {
+         "param": "filter \"1\" / param \"Cutoff\"",
+         "text": "180 Hz"
+        },
+        {
+         "param": "filter \"1\" / param \"Resonance\"",
+         "text": "30 %"
+        },
+        {
+         "param": "filter \"1\" / param \"Drive\"",
+         "text": "20 %"
+        },
+        {
+         "param": "filter \"1\" / param \"Key track\"",
+         "value": 1
+        },
+        {
+         "param": "env \"2\" / param \"Attack\"",
+         "text": "1 ms"
+        },
+        {
+         "param": "env \"2\" / param \"Decay\"",
+         "text": "260 ms"
+        },
+        {
+         "param": "env \"2\" / param \"Sustain\"",
+         "text": "15 %"
+        },
+        {
+         "param": "amp_env \"1\" / param \"Attack\"",
+         "text": "3 ms"
+        },
+        {
+         "param": "amp_env \"1\" / param \"Release\"",
+         "text": "90 ms"
+        }
+       ]
+      }
+     },
+     {
+      "command": "mod.add_route",
+      "args": {
+       "source": "env2",
+       "destination": {
+        "param": 67108866
+       },
+       "amount": 0.4
+      }
+     },
+     {
+      "command": "mod.add_route",
+      "args": {
+       "source": "velocity",
+       "destination": {
+        "param": 67108866
+       },
+       "amount": 0.15
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "preview",
+   "args": {
+    "notes": [
+     {
+      "key": 36,
+      "start": 0,
+      "length": 0.4
+     },
+     {
+      "key": 36,
+      "start": 0.5,
+      "length": 0.4
+     },
+     {
+      "key": 43,
+      "start": 1.0,
+      "length": 0.4
+     },
+     {
+      "key": 41,
+      "start": 1.5,
+      "length": 0.4
+     },
+     {
+      "key": 38,
+      "start": 2.0,
+      "length": 0.8
+     }
+    ]
+   }
+  },
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "params.set",
+      "args": {
+       "values": [
+        {
+         "param": "filter \"1\" / param \"Cutoff\"",
+         "text": "240 Hz"
+        }
+       ]
+      }
+     },
+     {
+      "command": "mod.set_amount",
+      "args": {
+       "slot": 0,
+       "amount": 0.55
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "preview",
+   "args": {
+    "notes": [
+     {
+      "key": 36,
+      "start": 0,
+      "length": 0.4
+     },
+     {
+      "key": 36,
+      "start": 0.5,
+      "length": 0.4
+     },
+     {
+      "key": 43,
+      "start": 1.0,
+      "length": 0.4
+     },
+     {
+      "key": 41,
+      "start": 1.5,
+      "length": 0.4
+     },
+     {
+      "key": 38,
+      "start": 2.0,
+      "length": 0.8
+     }
+    ]
+   }
+  },
+  {
+   "tool": "checkpoint",
+   "args": {
+    "action": "save",
+    "name": "final"
+   }
+  },
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "preset.save",
+      "args": {
+       "path": "{preset}"
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

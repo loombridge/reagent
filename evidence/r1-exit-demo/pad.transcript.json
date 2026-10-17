@@ -1,0 +1,196 @@
+{
+ "description": "A wide, slow pad: two detuned unison saws panned apart, a soft low-pass that breathes slowly, a long attack and a long release.",
+ "steps": [
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "params.set",
+      "args": {
+       "values": [
+        {
+         "param": "osc \"A\" / param \"Unison\"",
+         "value": 5
+        },
+        {
+         "param": "osc \"A\" / param \"Detune\"",
+         "value": 0.35
+        },
+        {
+         "param": "osc \"A\" / param \"Level\"",
+         "text": "55 %"
+        },
+        {
+         "param": "osc \"A\" / param \"Pan\"",
+         "value": -12
+        },
+        {
+         "param": "osc \"B\" / param \"On\"",
+         "value": 1
+        },
+        {
+         "param": "osc \"B\" / param \"Unison\"",
+         "value": 3
+        },
+        {
+         "param": "osc \"B\" / param \"Detune\"",
+         "value": 0.3
+        },
+        {
+         "param": "osc \"B\" / param \"Fine\"",
+         "text": "7 ct"
+        },
+        {
+         "param": "osc \"B\" / param \"Level\"",
+         "text": "45 %"
+        },
+        {
+         "param": "osc \"B\" / param \"Pan\"",
+         "value": 12
+        },
+        {
+         "param": "osc \"B\" / param \"Output\"",
+         "text": "Filter"
+        },
+        {
+         "param": "filter \"1\" / param \"On\"",
+         "value": 1
+        },
+        {
+         "param": "filter \"1\" / param \"Type\"",
+         "text": "Ladder LP 12"
+        },
+        {
+         "param": "filter \"1\" / param \"Cutoff\"",
+         "text": "1400 Hz"
+        },
+        {
+         "param": "filter \"1\" / param \"Resonance\"",
+         "text": "15 %"
+        },
+        {
+         "param": "lfo \"1\" / param \"Sync\"",
+         "value": 0
+        },
+        {
+         "param": "lfo \"1\" / param \"Rate\"",
+         "text": "0.35 Hz"
+        },
+        {
+         "param": "amp_env \"1\" / param \"Attack\"",
+         "text": "700 ms"
+        },
+        {
+         "param": "amp_env \"1\" / param \"Release\"",
+         "text": "1.6 s"
+        }
+       ]
+      }
+     },
+     {
+      "command": "mod.add_route",
+      "args": {
+       "source": "lfo1",
+       "destination": {
+        "param": 67108866
+       },
+       "amount": 0.12,
+       "polarity": "bipolar"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "preview",
+   "args": {
+    "seconds": 6,
+    "notes": [
+     {
+      "key": 60,
+      "start": 0,
+      "length": 3.5
+     },
+     {
+      "key": 63,
+      "start": 0,
+      "length": 3.5
+     },
+     {
+      "key": 67,
+      "start": 0,
+      "length": 3.5
+     },
+     {
+      "key": 70,
+      "start": 0,
+      "length": 3.5
+     }
+    ]
+   }
+  },
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "mod.set_amount",
+      "args": {
+       "slot": 0,
+       "amount": 0.2
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "preview",
+   "args": {
+    "seconds": 6,
+    "notes": [
+     {
+      "key": 60,
+      "start": 0,
+      "length": 3.5
+     },
+     {
+      "key": 63,
+      "start": 0,
+      "length": 3.5
+     },
+     {
+      "key": 67,
+      "start": 0,
+      "length": 3.5
+     },
+     {
+      "key": 70,
+      "start": 0,
+      "length": 3.5
+     }
+    ]
+   }
+  },
+  {
+   "tool": "checkpoint",
+   "args": {
+    "action": "save",
+    "name": "final"
+   }
+  },
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "preset.save",
+      "args": {
+       "path": "{preset}"
+      }
+     }
+    ]
+   }
+  }
+ ]
+}
