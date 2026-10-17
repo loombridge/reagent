@@ -37,15 +37,10 @@ path = "src/main.rs"
 required-features = ["export"]
 
 [dependencies]
-lspk-commands.workspace = true
-lspk-mod.workspace = true
 lspk-params.workspace = true
 lspk-plugin.workspace = true
-lspk-presets.workspace = true
+reagent-core.workspace = true
 reagent-engine.workspace = true
-# Pinned to lspk-commands' version: the preset commands' schemas come from it.
-schemars = { version = "=1.2.2", default-features = false, features = ["std", "derive"] }
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The generic editor until Reagent's own interface (R2).
 lspk-ui = { workspace = true, optional = true }
@@ -56,6 +51,8 @@ lspk-standalone = { workspace = true, optional = true }
 
 [dev-dependencies]
 lspk-agent.workspace = true
+lspk-mod.workspace = true
+lspk-presets.workspace = true
 lspk-rt.workspace = true
 lspk-test.workspace = true
 

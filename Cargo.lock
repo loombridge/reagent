@@ -2413,7 +2413,6 @@ name = "reagent"
 version = "0.0.0"
 dependencies = [
  "lspk-agent",
- "lspk-commands",
  "lspk-mod",
  "lspk-params",
  "lspk-plugin",
@@ -2423,9 +2422,8 @@ dependencies = [
  "lspk-standalone",
  "lspk-test",
  "lspk-ui",
+ "reagent-core",
  "reagent-engine",
- "schemars",
- "serde",
  "serde_json",
 ]
 
@@ -2441,7 +2439,7 @@ dependencies = [
  "lspk-rt",
  "lspk-test",
  "midly",
- "reagent",
+ "reagent-core",
  "reagent-engine",
  "serde_json",
 ]
@@ -2449,6 +2447,21 @@ dependencies = [
 [[package]]
 name = "reagent-content"
 version = "0.0.0"
+
+[[package]]
+name = "reagent-core"
+version = "0.0.0"
+dependencies = [
+ "lspk-commands",
+ "lspk-mod",
+ "lspk-params",
+ "lspk-plugin",
+ "lspk-presets",
+ "reagent-engine",
+ "schemars",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "reagent-engine"

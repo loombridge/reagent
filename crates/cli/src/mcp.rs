@@ -13,7 +13,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use lspk_plugin_agent::headless::Headless;
-use reagent::Reagent;
+use reagent_core::Reagent;
 
 use crate::Outcome;
 

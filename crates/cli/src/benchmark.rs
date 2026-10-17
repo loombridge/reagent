@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use lspk_test::bench::{Budget, Scenario, Suite};
 use lspk_test::{Script, Settings};
-use reagent::{Reagent, patches};
+use reagent_core::{Reagent, patches};
 use reagent_engine::Registry;
 
 use crate::Outcome;

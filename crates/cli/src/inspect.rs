@@ -10,9 +10,9 @@ use std::process::ExitCode;
 use clap::Parser;
 use lspk_params::ParamId;
 use lspk_test::render::Instance;
-use reagent::Reagent;
-use reagent::params;
-use reagent::preset;
+use reagent_core::Reagent;
+use reagent_core::params;
+use reagent_core::preset;
 
 use crate::Outcome;
 

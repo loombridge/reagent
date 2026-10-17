@@ -1,0 +1,24 @@
+[package]
+name = "reagent-core"
+description = "Reagent's plug-in without a format export or an editor: the plug-in's types, its presets and its hand-built patches, for the headless CLI and for hosts that compile it in."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+lspk-commands.workspace = true
+lspk-mod.workspace = true
+lspk-params.workspace = true
+lspk-plugin.workspace = true
+lspk-presets.workspace = true
+reagent-engine.workspace = true
+# Pinned to lspk-commands' version: the preset commands' schemas come from it.
+schemars = { version = "=1.2.2", default-features = false, features = ["std", "derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true

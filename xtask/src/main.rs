@@ -13,9 +13,8 @@ const REPO: Repo = Repo {
         "reagent-engine",
         "reagent-content",
         "reagent-import",
-        // Not headless yet: it renders through `reagent::Reagent`, which carries
-        // the generic editor and so reaches `lspk-ui`. It returns here when the
-        // plug-in's headless half is split out of `reagent`.
+        "reagent-core",
+        "reagent-cli",
     ],
     downstream: no_crate,
     ..Repo::plugin(&["reagent"], lspk_xtask::REJECTS_AGPL)
