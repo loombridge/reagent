@@ -1,5 +1,6 @@
 //! `reagent-cli`'s verbs, headless: render a preset and a phrase to a WAV,
-//! print what a preset holds, and run Reagent's benchmark suite.
+//! print what a preset holds, run Reagent's benchmark suite, and serve the
+//! agent interface over stdio.
 //!
 //! Each verb is a function here and a subcommand in the binary, so a test
 //! drives it without a process. Every render runs the engine the way a host
@@ -8,6 +9,7 @@
 
 pub mod benchmark;
 pub mod inspect;
+pub mod mcp;
 pub mod render;
 
 use std::process::ExitCode;

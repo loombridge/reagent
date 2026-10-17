@@ -22,21 +22,21 @@ reagent-cli = { path = "crates/cli" }
 # comes from the same revision; to work on the kit and Reagent at once, patch
 # them to a local checkout (CONTRIBUTING.md, "Working on the plug-in kit and
 # Reagent at once") rather than editing these lines.
-lspk-agent = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-commands = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-dsp = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-mod = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-params = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-plugin = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2", default-features = false }
-lspk-plugin-agent = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-presets = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-rt = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-standalone = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-test = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-ui = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-voice = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-wavetable = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
-lspk-xtask = { git = "https://github.com/loombridge/plugin-kit", rev = "e1e7186b9cc37d14eb99999e2ebdd55a0149f1e2" }
+lspk-agent = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-commands = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-dsp = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-mod = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-params = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-plugin = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581", default-features = false }
+lspk-plugin-agent = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-presets = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-rt = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-standalone = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-test = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-ui = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-voice = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-wavetable = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
+lspk-xtask = { git = "https://github.com/loombridge/plugin-kit", rev = "5dd370c85d8ed900c5c2d33dc15b800d7964b581" }
 
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }

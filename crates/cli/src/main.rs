@@ -44,6 +44,15 @@ enum Command {
     /// release for numbers worth keeping. Exits with status 1 if a
     /// scenario's plug-in can't be made or given its state.
     Benchmark(reagent_cli::benchmark::BenchmarkArgs),
+    /// Serve the agent interface over standard input and output.
+    ///
+    /// An agent client starts this and speaks MCP on its standard input and
+    /// output: discovery, `run` (a batch is one step, with a dry run),
+    /// `query`, `preview`, `checkpoint` and the guide. Reads and edits run;
+    /// destructive and external commands (saving and loading preset files)
+    /// are refused, with the reason, unless `--autonomous` is given. Ends
+    /// when standard input does, with status 0.
+    Mcp(reagent_cli::mcp::McpArgs),
 }
 
 fn main() -> ExitCode {
@@ -52,6 +61,7 @@ fn main() -> ExitCode {
         Command::Render(args) => reagent_cli::render::run(args),
         Command::Inspect(args) => reagent_cli::inspect::run(args),
         Command::Benchmark(args) => reagent_cli::benchmark::run(args),
+        Command::Mcp(args) => reagent_cli::mcp::run(args),
     };
     match outcome {
         Ok(code) => code,
