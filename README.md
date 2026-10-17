@@ -47,17 +47,19 @@ Reagent depends on the plug-in kit by git revision. To work on both at once, see
 
 ## Headless
 
-`reagent-cli` renders, inspects and benchmarks Reagent with no host and no window. Every verb exits `0` when it succeeds, and `1` with a message on standard error when it fails.
+`reagent-cli` renders, inspects and benchmarks Reagent, and serves its agent interface, with no host and no window. Every verb exits `0` when it succeeds, and `1` with a message on standard error when it fails.
 
 ```sh
 reagent-cli render --preset patch.json --out out.wav [--phrase chord|run] [--midi file.mid] [--rate 48000] [--block 512]
 reagent-cli inspect --preset patch.json
 reagent-cli benchmark [--quick]
+reagent-cli mcp [--autonomous]
 ```
 
 - **render** plays a preset through the same engine code a host runs, faster than real time, and writes a 32-bit float WAV. The same preset and phrase render to the same samples every time and at any block size. `--midi` plays a Standard MIDI File instead of a built-in phrase. A debug build fails if the engine touches the heap inside a block.
 - **inspect** reads a preset with the plug-in kit's preset reader and prints its schema version, the modules it sets, each non-default value in its real unit and its choice by name, and the wavetables its oscillators name.
 - **benchmark** times the same suite `cargo xtask bench` runs and prints its table; build in release for numbers worth keeping.
+- **mcp** serves the agent interface over standard input and output, for an agent client to start. It offers the same tools the plug-in offers inside a host: `list_commands`, `describe_command`, `run` (a batch is all or nothing, and `dry_run` checks without changing anything), `query` (every parameter by ID, name or path, with a summary of the signal path), `checkpoint`, `preview` (renders a note, chord or phrase and returns the audio with an analysis) and the guides. Destructive and external commands, such as saving and loading preset files, are refused with the reason unless `--autonomous` is given. It exits `0` when standard input ends.
 
 ## Licence
 
