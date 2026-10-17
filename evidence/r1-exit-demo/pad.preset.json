@@ -1,0 +1,148 @@
+{
+  "format": "reagent-preset",
+  "params": [
+    {
+      "id": 16777217,
+      "value": 55.0
+    },
+    {
+      "id": 16777218,
+      "value": -12.0
+    },
+    {
+      "id": 16777243,
+      "value": 5.0
+    },
+    {
+      "id": 16777244,
+      "value": 0.35
+    },
+    {
+      "id": 16842752,
+      "value": true
+    },
+    {
+      "id": 16842753,
+      "value": 45.0
+    },
+    {
+      "id": 16842754,
+      "value": 12.0
+    },
+    {
+      "id": 16842755,
+      "value": "Filter"
+    },
+    {
+      "id": 16842770,
+      "value": 7.0
+    },
+    {
+      "id": 16842779,
+      "value": 3.0
+    },
+    {
+      "id": 16842780,
+      "value": 0.3
+    },
+    {
+      "id": 67108864,
+      "value": true
+    },
+    {
+      "id": 67108866,
+      "value": 1400.0
+    },
+    {
+      "id": 67108867,
+      "value": 15.0
+    },
+    {
+      "id": 100663296,
+      "value": 700.0
+    },
+    {
+      "id": 100663300,
+      "value": 1600.0
+    },
+    {
+      "id": 134217732,
+      "value": false
+    },
+    {
+      "id": 134217734,
+      "value": 0.35
+    }
+  ],
+  "schema": 1,
+  "state": {
+    "matrix": {
+      "locked": false,
+      "note_curves": {
+        "key": [
+          {
+            "curve": 0.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "curve": 0.0,
+            "x": 1.0,
+            "y": 1.0
+          }
+        ],
+        "velocity": [
+          {
+            "curve": 0.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "curve": 0.0,
+            "x": 1.0,
+            "y": 1.0
+          }
+        ]
+      },
+      "slots": [
+        {
+          "amount": 0.20000000298023224,
+          "aux": null,
+          "aux_curve": {
+            "bend": 0.5
+          },
+          "aux_invert": false,
+          "bypass": false,
+          "destination": {
+            "param": 67108866
+          },
+          "output": 1.0,
+          "polarity": "bipolar",
+          "slot": 0,
+          "source": "lfo1",
+          "source_curve": {
+            "bend": 0.5
+          }
+        }
+      ],
+      "version": 1
+    },
+    "oscillators": [
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      },
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      },
+      {
+        "wavetable": {
+          "table": "reagent/basic-shapes"
+        }
+      }
+    ]
+  }
+}

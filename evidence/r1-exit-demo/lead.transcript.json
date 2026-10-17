@@ -1,0 +1,225 @@
+{
+ "description": "A bright mono lead: three slightly detuned saws, a resonant low-pass that opens on every note, glide between notes and a vibrato that comes in after a beat.",
+ "steps": [
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "params.set",
+      "args": {
+       "values": [
+        {
+         "param": "Mono",
+         "value": 1
+        },
+        {
+         "param": "Legato",
+         "value": 1
+        },
+        {
+         "param": "Glide time",
+         "text": "60 ms"
+        },
+        {
+         "param": "osc \"A\" / param \"Unison\"",
+         "value": 3
+        },
+        {
+         "param": "osc \"A\" / param \"Detune\"",
+         "value": 0.2
+        },
+        {
+         "param": "osc \"A\" / param \"Level\"",
+         "text": "80 %"
+        },
+        {
+         "param": "osc \"A\" / param \"Output\"",
+         "text": "Filter"
+        },
+        {
+         "param": "filter \"1\" / param \"On\"",
+         "value": 1
+        },
+        {
+         "param": "filter \"1\" / param \"Type\"",
+         "text": "SVF LP 24"
+        },
+        {
+         "param": "filter \"1\" / param \"Cutoff\"",
+         "text": "2800 Hz"
+        },
+        {
+         "param": "filter \"1\" / param \"Resonance\"",
+         "text": "25 %"
+        },
+        {
+         "param": "filter \"1\" / param \"Drive\"",
+         "text": "10 %"
+        },
+        {
+         "param": "env \"2\" / param \"Decay\"",
+         "text": "400 ms"
+        },
+        {
+         "param": "env \"2\" / param \"Sustain\"",
+         "text": "50 %"
+        },
+        {
+         "param": "lfo \"2\" / param \"Sync\"",
+         "value": 0
+        },
+        {
+         "param": "lfo \"2\" / param \"Rate\"",
+         "text": "5.5 Hz"
+        },
+        {
+         "param": "lfo \"2\" / param \"Delay\"",
+         "text": "1/8"
+        },
+        {
+         "param": "amp_env \"1\" / param \"Attack\"",
+         "text": "5 ms"
+        },
+        {
+         "param": "amp_env \"1\" / param \"Release\"",
+         "text": "180 ms"
+        }
+       ]
+      }
+     },
+     {
+      "command": "mod.add_route",
+      "args": {
+       "source": "env2",
+       "destination": {
+        "param": 67108866
+       },
+       "amount": 0.25
+      }
+     },
+     {
+      "command": "mod.add_route",
+      "args": {
+       "source": "lfo2",
+       "destination": {
+        "param": 19
+       },
+       "amount": 0.004,
+       "polarity": "bipolar"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "preview",
+   "args": {
+    "notes": [
+     {
+      "key": 72,
+      "start": 0,
+      "length": 0.5
+     },
+     {
+      "key": 74,
+      "start": 0.5,
+      "length": 0.5
+     },
+     {
+      "key": 76,
+      "start": 1.0,
+      "length": 0.5
+     },
+     {
+      "key": 79,
+      "start": 1.5,
+      "length": 1.5
+     },
+     {
+      "key": 76,
+      "start": 3.0,
+      "length": 1.0
+     }
+    ]
+   }
+  },
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "params.set",
+      "args": {
+       "values": [
+        {
+         "param": "filter \"1\" / param \"Cutoff\"",
+         "text": "3200 Hz"
+        }
+       ]
+      }
+     },
+     {
+      "command": "mod.set_amount",
+      "args": {
+       "slot": 1,
+       "amount": 0.006
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "preview",
+   "args": {
+    "notes": [
+     {
+      "key": 72,
+      "start": 0,
+      "length": 0.5
+     },
+     {
+      "key": 74,
+      "start": 0.5,
+      "length": 0.5
+     },
+     {
+      "key": 76,
+      "start": 1.0,
+      "length": 0.5
+     },
+     {
+      "key": 79,
+      "start": 1.5,
+      "length": 1.5
+     },
+     {
+      "key": 76,
+      "start": 3.0,
+      "length": 1.0
+     }
+    ]
+   }
+  },
+  {
+   "tool": "checkpoint",
+   "args": {
+    "action": "save",
+    "name": "final"
+   }
+  },
+  {
+   "tool": "run",
+   "args": {
+    "commands": [
+     {
+      "command": "preset.save",
+      "args": {
+       "path": "{preset}"
+      }
+     }
+    ]
+   }
+  }
+ ]
+}
