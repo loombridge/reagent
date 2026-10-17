@@ -17,8 +17,8 @@ use clap::{Parser, ValueEnum};
 use lspk_plugin::{Event, Note, Plugin};
 use lspk_test::Script;
 use lspk_test::render::{Instance, Output, Settings};
-use reagent::Reagent;
-use reagent::preset;
+use reagent_core::Reagent;
+use reagent_core::preset;
 
 use crate::Outcome;
 

@@ -9,9 +9,9 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-# The plug-in's types, its preset files and its hand-built patches, without a
-# format export or an editor: the CLI drives the engine headlessly.
-reagent = { workspace = true, default-features = false }
+# The plug-in's types, its preset files and its hand-built patches: the CLI
+# drives the engine headlessly.
+reagent-core.workspace = true
 reagent-engine.workspace = true
 # The render harness, the signals and the WAV encoder a headless render uses.
 lspk-test = { workspace = true, default-features = false }

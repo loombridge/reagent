@@ -8,11 +8,11 @@ use std::path::{Path, PathBuf};
 
 use lspk_plugin::Plugin;
 use lspk_test::render::Instance;
-use reagent::Reagent;
-use reagent::patches::Patch;
-use reagent::preset;
 use reagent_cli::inspect;
 use reagent_cli::render::{self, Phrase, RenderArgs};
+use reagent_core::Reagent;
+use reagent_core::patches::Patch;
+use reagent_core::preset;
 use reagent_engine::Registry;
 
 lspk_rt::install_trap!();
@@ -58,7 +58,7 @@ fn args(preset: &Path, out: &Path, phrase: Phrase, block: usize) -> RenderArgs {
 fn a_render_repeats_to_the_bit_run_to_run_and_at_any_block_size() {
     // A patch with unison and modulation, which the golden suite proves is
     // block-size invariant.
-    let preset = preset_file("render-blocks.json", reagent::patches::pad());
+    let preset = preset_file("render-blocks.json", reagent_core::patches::pad());
     let out = temporary("blocks.wav");
     let first = render::render(&args(&preset, &out, Phrase::Chord, 512)).expect("a render");
     assert!(first.is_finite() && !first.is_silent());
@@ -74,7 +74,7 @@ fn a_render_repeats_to_the_bit_run_to_run_and_at_any_block_size() {
 
 #[test]
 fn a_render_writes_a_wav_that_reads_back_as_the_same_audio() {
-    let preset = preset_file("render-wav.json", reagent::patches::bass());
+    let preset = preset_file("render-wav.json", reagent_core::patches::bass());
     let out = temporary("written.wav");
     let args = args(&preset, &out, Phrase::Run, 256);
     assert!(render::run(&args).is_ok());
@@ -86,7 +86,7 @@ fn a_render_writes_a_wav_that_reads_back_as_the_same_audio() {
 
 #[test]
 fn a_midi_file_plays_its_notes() {
-    let preset = preset_file("render-midi.json", reagent::patches::bass());
+    let preset = preset_file("render-midi.json", reagent_core::patches::bass());
     let out = temporary("midi.wav");
     let midi = midi_file();
     let args = RenderArgs {
@@ -122,7 +122,7 @@ fn a_sample_rate_outside_the_accepted_range_fails() {
 
 #[test]
 fn inspect_prints_what_a_preset_holds() {
-    let path = preset_file("inspect.json", reagent::patches::bass());
+    let path = preset_file("inspect.json", reagent_core::patches::bass());
     let report = inspect::inspect(&path).expect("inspected");
     assert_eq!(report.format, "reagent-preset");
     assert_eq!(report.schema, lspk_presets::SCHEMA);
@@ -139,7 +139,7 @@ fn inspect_prints_what_a_preset_holds() {
     let instance = Instance::<Reagent>::new().expect("an instance");
     let preset =
         preset::read(&path, instance.values(), instance.plugin().registry()).expect("the preset");
-    let space = reagent::params::space();
+    let space = reagent_core::params::space();
     let value_of = |id| preset.value(id);
     let mut expected: Vec<(String, String)> = preset
         .values

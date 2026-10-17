@@ -12,6 +12,7 @@ publish = false
 
 [workspace.dependencies]
 reagent-engine = { path = "crates/engine" }
+reagent-core = { path = "crates/core" }
 reagent-content = { path = "crates/content" }
 reagent-import = { path = "crates/import" }
 reagent-ui = { path = "crates/ui" }
