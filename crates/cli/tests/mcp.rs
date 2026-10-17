@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use lspk_test::agent::{Client, Stdio, audio, check_tools};
-use reagent::params::{FILTER, filter, id};
+use reagent_core::params::{FILTER, filter, id};
 use serde_json::{Value, json};
 
 const CUTOFF: &str = r#"filter "1" / param "Cutoff""#;

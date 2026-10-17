@@ -16,7 +16,8 @@ Reagent isn't affiliated with or endorsed by Xfer Records. Serum is a trademark 
 | `reagent-content` | Factory presets and wavetables, all made by Loombridge, and the scripts that generate them |
 | `reagent-import` | Importers for presets and wavetables made in other synthesisers |
 | `reagent-ui` | Reagent's interface, built from the plug-in kit's widgets |
-| `reagent` | The plug-in (CLAP, VST3 and Audio Unit v2) and the standalone app, with the agent interface |
+| `reagent-core` | The plug-in without a format export or an editor: its parameters, presets and hand-built patches, headless |
+| `reagent` | The plug-in (CLAP, VST3 and Audio Unit v2) and the standalone app, with the editor and the agent interface, made from `reagent-core` |
 | `reagent-cli` | Headless: render, inspect, convert, benchmark, and the agent interface over stdio |
 
 ## Develop
