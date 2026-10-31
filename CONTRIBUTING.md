@@ -42,6 +42,8 @@ If you have ever studied the inside of Xfer's code, say so in your pull request 
 
    It runs format, clippy with warnings denied, the tests under cargo-nextest and then the doctests, the layer rules, `cargo deny`, and a self-test that proves `deny.toml` still rejects an incompatible licence. Reagent's `cargo xtask` is the plug-in kit's tasks run in this repository, so `cargo xtask validate`, `golden`, `bench` and `bundle` are there too (`cargo xtask help`).
 
+   Maintainers' checkouts also run `cargo xtask reagent-parity`, which checks the feature inventory kept outside this repository (its path in `$REAGENT_INVENTORY`, or as an argument): it fails when a row was last checked against a version older than the inventory's reference version, or when the inventory's summary table is stale (`--update` rewrites the table). It skips itself, and passes, where the inventory is absent.
+
 1. If the change moves Reagent's sound, remake the golden renders with `cargo xtask golden --update` and say why in the pull request. If it adds a parameter, run `LSPK_IDS_UPDATE=1 cargo test -p reagent --test ids` and commit `crates/plugin/tests/ids.txt`, which may only be added to. CI's Linux job fails a pull request that makes any benchmark more than 3 % slower than `bench/baseline.json`; when that's intended, update it with `cargo xtask bench --update-baseline --reason "..." --from <counts>` from the counts the job prints, and say why.
 
 ## Working on the plug-in kit and Reagent at once
