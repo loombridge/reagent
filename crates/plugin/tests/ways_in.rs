@@ -9,7 +9,6 @@
 //! discovery file and the environment are the process's.
 
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use lspk_agent::client::{Client, Http};
 use lspk_agent::discovery::{Discovery, Entry};
@@ -44,6 +43,7 @@ fn own_entry() -> Entry {
 
 /// Runs `calls` on a thread of its own while `idle` gives the plug-in its
 /// main thread, as the host's event loop does when the server wakes it.
+#[cfg(any(target_os = "macos", windows))]
 fn serving<T: Send + 'static>(
     mut idle: impl FnMut(),
     calls: impl FnOnce() -> T + Send + 'static,
@@ -114,6 +114,10 @@ fn the_clap_export_serves_an_agent_found_in_the_discovery_file() {
     assert!(host.take_requests().dirty);
 }
 
+/// clap-wrapper's idle timer, which runs the server's calls on the main
+/// thread, reaches the host without an editor only on macOS and Windows
+/// (see lspk_test::vst3).
+#[cfg(any(target_os = "macos", windows))]
 #[test]
 fn the_vst3_export_serves_an_agent_found_in_the_discovery_file() {
     #[cfg(windows)]
@@ -135,8 +139,11 @@ fn the_vst3_export_serves_an_agent_found_in_the_discovery_file() {
     let level = id(OSC, 0, channel::LEVEL).0;
     // The wrapper calls the plug-in's main thread from the host's event
     // loop, so the loop runs while the agent works.
-    let _client = serving(|| host.idle(Duration::from_millis(5)), move || meet(&entry));
-    host.idle(Duration::from_millis(100));
+    let _client = serving(
+        || host.idle(std::time::Duration::from_millis(5)),
+        move || meet(&entry),
+    );
+    host.idle(std::time::Duration::from_millis(100));
     let events = host.take_handler_events();
     assert!(
         events
