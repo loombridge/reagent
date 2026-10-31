@@ -2413,6 +2413,7 @@ name = "reagent"
 version = "0.0.0"
 dependencies = [
  "lspk-agent",
+ "lspk-commands",
  "lspk-mod",
  "lspk-params",
  "lspk-plugin",
