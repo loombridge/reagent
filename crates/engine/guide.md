@@ -37,3 +37,21 @@ Keys sound in twelve-tone equal temperament unless a tuning says otherwise. `tun
 - `query` after an edit reads the patch back, in prose in `summary`, so check that it says what you meant before you listen.
 - `preview` a note, a chord or a phrase after each change that you expect to be audible: it renders a separate copy of the patch and returns the audio and an analysis (pitch, loudness, spectrum, envelope, stereo width). Trust its numbers over your guess at what a setting sounds like.
 - Commands that read or write files (`preset.load`, `preset.save`) ask the person first, or are refused where there is no person to ask; use the patch commands instead.
+
+## Sound-design recipes
+
+When you're asked for a sound in words, start from the recipe for its instrument, then render, read and adjust, one control at a time. Every number is a place to start, not an answer.
+
+- **Bass:** a saw on oscillator A with the sub on at the same octave (`Osc Sub` `On`, `Level` 70 %), both to Filter 1 (`Output` Filter), Ladder LP 24 with `Cutoff` near 700 Hz and `Resonance` 20 %, `Attack` 3 ms, `Decay` 400 ms, `Sustain` 70 %, `Release` 120 ms. Play it around C2; keep one voice at a time for a plain bass.
+- **Lead:** oscillator A's saw as three unison copies (`Detune` 0.1) over oscillator B's saw detuned 7 cents, through SVF LP 12 at 4 kHz with `Resonance` 15 %, `Attack` 5 ms, `Sustain` 80 %. Play it around C4.
+- **Pad:** oscillator A's saw as five unison copies (`Detune` 0.15), Ladder LP 12 at 2.5 kHz, `Attack` 600 ms, `Release` 1.2 s, `Sustain` 80 %. Hold the note for two seconds or more to hear it open.
+- **Pluck:** one saw through SVF LP 12 at 3 kHz, `Attack` 1 ms, `Decay` 250 ms, `Sustain` 0 %. Play it around C4.
+
+A quality word moves one reading, with one control. Read the reading from `preview`'s analysis and move the control until it fits:
+
+- **Dark or bright:** how far the spectrum's centre (`centroid_hz` in `preview`'s analysis) sits above the note's pitch. Move Filter 1's `Cutoff`: down for dark, up for bright. Dark is a centroid within about an octave of the pitch; bright is two octaves or more above it. Closing the filter lowers the level too, so raise `Main level` until the loudness is back where it was.
+- **Wide:** the share of the sound that is side, not mid. Pan oscillator A to −50, turn oscillator B on detuned from it (`Fine` −9) with several unison copies, and move B's `Pan` to the right until the stereo width in the analysis reads 0.3 or more. It reads 0 for a mono patch.
+- **Slow or snappy:** how soon the sound reaches full level, and how long it sounds. Slow is the amp envelope's `Attack`, raised until the level takes about half a second to arrive. Snappy is `Sustain` at 0 % and a short `Decay`, until the whole note ends in under a second.
+- **Level:** every patch ends here. Aim for an RMS between −30 and −12 dBFS in `preview`'s analysis, with the peak under 0.
+
+`reagent-cli text-to-patch "<description>"` runs this loop by itself, and `reagent-cli text-to-patch` with no description runs the evaluation set: written descriptions, each judged on the features of its result.

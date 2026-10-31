@@ -1,6 +1,6 @@
 //! `reagent-cli`'s verbs, headless: render a preset and a phrase to a WAV,
 //! print what a preset holds, run Reagent's benchmark suite, render datasets of
-//! random patches, and serve the agent interface over stdio.
+//! random patches, turn a description into a patch, and serve the agent interface over stdio.
 //!
 //! Each verb is a function here and a subcommand in the binary, so a test
 //! drives it without a process. Every render runs the engine the way a host
@@ -12,6 +12,7 @@ pub mod dataset;
 pub mod inspect;
 pub mod mcp;
 pub mod render;
+pub mod text_to_patch;
 
 use std::process::ExitCode;
 
