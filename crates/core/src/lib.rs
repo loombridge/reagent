@@ -12,10 +12,11 @@
 //! own state, preset files (the `preset.*` commands), the summary and the
 //! guide agents read.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use lspk_commands::{CommandSpec, Context, NoArgs, Permission};
 use lspk_mod::curve::CurvePoint;
+use lspk_mod::telemetry::{self, Frame, Publisher, Watcher};
 use lspk_mod::{Matrix, ProgramSender, mailbox};
 use lspk_params::{ParamDescriptor, ParamId, ParamSpace};
 use lspk_plugin::{
@@ -120,6 +121,11 @@ pub fn space() -> ParamSpace {
     reagent_engine::params::space()
 }
 
+/// The editor's end of the engine's live values: a window locks it to read
+/// the latest frame, and tells the engine it is watching with
+/// [`Watcher::watch`].
+pub type Telemetry = Arc<Mutex<Watcher<Frame>>>;
+
 /// Reagent on the main thread.
 pub struct Reagent {
     host: Host,
@@ -140,6 +146,10 @@ pub struct Reagent {
     compare: Compare,
     /// The patches before the preset changes, for undo and redo.
     history: History,
+    /// The editor's end of the live values, kept for the instance's life.
+    telemetry: Telemetry,
+    /// The engine's end, while no engine holds it.
+    publisher: Option<Publisher<Frame>>,
 }
 
 impl std::fmt::Debug for Reagent {
@@ -164,6 +174,27 @@ impl Reagent {
     #[must_use]
     pub fn registry(&self) -> &Arc<Registry> {
         &self.registry
+    }
+
+    /// The engine's live values for the interface: modulated values, phases,
+    /// envelope stages, levels, a scope and a spectrum (R2.3). The engine
+    /// writes them only while the editor has told the watcher it is open.
+    #[must_use]
+    pub fn telemetry(&self) -> &Telemetry {
+        &self.telemetry
+    }
+
+    /// The publisher for an engine that activates now: the one the last
+    /// engine gave back, or, if it was dropped without deactivating, a new
+    /// channel the editor's handle moves to (a window open then calls
+    /// [`Watcher::watch`] again).
+    fn take_publisher(&mut self) -> Publisher<Frame> {
+        self.publisher.take().unwrap_or_else(|| {
+            let (publisher, watcher) =
+                telemetry::channel(reagent_engine::telemetry::layout(&self.registry));
+            *self.telemetry.lock().unwrap_or_else(|e| e.into_inner()) = watcher;
+            publisher
+        })
     }
 
     /// Copies the note curves' switches from the parameters into the matrix,
@@ -247,9 +278,11 @@ impl Plugin for Reagent {
         .notes(NotePorts::INPUT);
 
     fn new(host: Host) -> Self {
+        let registry = Registry::new();
+        let (publisher, watcher) = telemetry::channel(reagent_engine::telemetry::layout(&registry));
         Self {
             host,
-            registry: Registry::new(),
+            registry,
             matrix: Matrix::new(),
             sender: None,
             patches: None,
@@ -258,6 +291,8 @@ impl Plugin for Reagent {
             slots: preset::default_slots(),
             compare: Compare::new(),
             history: History::new(preset::UNDO_PRESETS),
+            telemetry: Arc::new(Mutex::new(watcher)),
+            publisher: Some(publisher),
         }
     }
 
@@ -290,12 +325,14 @@ impl Plugin for Reagent {
             self.needs.clone(),
         );
         engine.attach_patches(patch_receiver);
+        engine.attach_telemetry(self.take_publisher());
         self.sender = Some((sender, config.sample_rate));
         self.patches = Some(patches);
         Ok(engine)
     }
 
-    fn deactivate(&mut self, processor: Engine) {
+    fn deactivate(&mut self, mut processor: Engine) {
+        self.publisher = processor.take_telemetry();
         drop(processor);
         self.sender = None;
         self.patches = None;

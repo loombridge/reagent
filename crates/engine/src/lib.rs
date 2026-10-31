@@ -8,6 +8,7 @@
 //! | [`modulation`] | Every modulation source and destination, and the matrix as a patch saves it |
 //! | [`patch`] | The patch compiler: the modules in use as a flat program, and its mailbox |
 //! | [`table`] | The default wavetable |
+//! | [`telemetry`] | The live values the audio thread shows the interface |
 //! | [`engine`] | The engine on the audio thread |
 //! | [`describe`] | A patch in prose, and the guide for agents |
 //!
@@ -33,6 +34,7 @@ pub mod params;
 pub mod patch;
 pub mod routing;
 pub mod table;
+pub mod telemetry;
 
 pub use engine::Engine;
 pub use modulation::Registry;
