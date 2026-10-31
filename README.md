@@ -73,7 +73,7 @@ reagent-cli mcp [--autonomous]
 - Every patch plays MIDI key 48 at velocity 0.8, held for 1 s, in a render of 1.5 s at 48 kHz.
 - `dataset.json` holds the format version (1), the seed, the count, the sample rate, the note and what each feature means.
 - `patches.jsonl` holds one JSON object per line, in index order: `index`, `attempts`, `params` (each parameter the patch sets as `[id, value]`, the value in real units; every other parameter is at its default), `routes` (`source` key, `destination` parameter ID, `amount`, `polarity`) and `features`: `peak_db`, `rms_db`, `centroid_hz`, `pitch_hz`, `onset_s`, `attack_end_s` and `decay_end_s`.
-- With `--audio`, `audio/<index>.wav` holds each render as a 32-bit float WAV (about 0.55 MB each).
+- With `--audio`, `audio/<index>.wav` holds each render, the index in eight digits (`audio/00000042.wav`), as a 32-bit float WAV (about 0.55 MB each).
 
 Throughput on an Apple M1 Pro (10 cores), release build, 1,000 patches of seed 1, no audio files: 7,300 patches a minute on 10 threads, and 1,400 a minute on one. With `--audio` on 3 threads it writes 3,800 a minute.
 

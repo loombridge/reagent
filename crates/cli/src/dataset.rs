@@ -11,8 +11,8 @@
 //!   with the value in real units; every other parameter is at its default),
 //!   `routes` (each modulation route: `source` key, `destination` parameter
 //!   ID, `amount`, `polarity`) and `features`.
-//! - `audio/<index>.wav`: the render, a 32-bit float WAV, when `--audio` is
-//!   given.
+//! - `audio/<index>.wav` (the index in eight digits): the render, a 32-bit
+//!   float WAV, when `--audio` is given.
 //!
 //! Everything in the folder is a function of the seed and the count: patch
 //! `i` comes from the seed and `i` alone, so a dataset repeats to the byte
@@ -68,7 +68,7 @@ pub struct DatasetArgs {
     /// The seed every patch is drawn from.
     #[arg(long, default_value_t = 0)]
     pub seed: u64,
-    /// Also write each render as `audio/<index>.wav`.
+    /// Also write each render as `audio/<index>.wav`, the index in eight digits.
     #[arg(long)]
     pub audio: bool,
     /// How many patches render at once; default one per core.
@@ -286,7 +286,7 @@ fn manifest(args: &DatasetArgs) -> Value {
             "render_s": RENDER_SECONDS,
         },
         "features": {
-            "peak_db": "the largest sample, dBFS",
+            "peak_db": "the largest sample of the mono mix, dBFS",
             "rms_db": "the RMS of the mono mix, dBFS",
             "centroid_hz": "the power-weighted mean frequency, Hz; null for silence",
             "pitch_hz": "the fundamental, Hz; null if not clearly periodic",
