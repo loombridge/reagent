@@ -52,6 +52,15 @@ enum Command {
     /// the renders. The same seed and count make the same folder. Exits with
     /// status 1 if a file can't be written or no playable patch turns up.
     Dataset(reagent_cli::dataset::DatasetArgs),
+    /// Search for a patch that sounds like a recording.
+    ///
+    /// Renders `--evaluations` candidate patches on every core, keeps the
+    /// one whose perception features are nearest the reference's, writes it
+    /// to `--out` as a preset, and prints how near it got and how long the
+    /// search took. The same reference, seed and budget find the same patch.
+    /// Exits with status 1 if a file can't be read or written, or the
+    /// reference is silent.
+    Match(reagent_cli::matching::MatchArgs),
     /// Serve the agent interface over standard input and output.
     ///
     /// An agent client starts this and speaks MCP on its standard input and
@@ -70,6 +79,7 @@ fn main() -> ExitCode {
         Command::Inspect(args) => reagent_cli::inspect::run(args),
         Command::Benchmark(args) => reagent_cli::benchmark::run(args),
         Command::Dataset(args) => reagent_cli::dataset::run(args),
+        Command::Match(args) => reagent_cli::matching::run(args),
         Command::Mcp(args) => reagent_cli::mcp::run(args),
     };
     match outcome {

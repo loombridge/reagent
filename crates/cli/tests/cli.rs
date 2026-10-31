@@ -10,6 +10,7 @@ use lspk_plugin::Plugin;
 use lspk_test::render::Instance;
 use reagent_cli::dataset::{self, DatasetArgs};
 use reagent_cli::inspect;
+use reagent_cli::matching::{self, MatchArgs};
 use reagent_cli::render::{self, Phrase, RenderArgs};
 use reagent_core::Reagent;
 use reagent_core::patches::Patch;
@@ -263,4 +264,47 @@ fn midi_file() -> PathBuf {
     smf.write_std(&mut bytes).expect("a MIDI file");
     fs::write(&path, bytes).expect("the MIDI file");
     path
+}
+
+#[test]
+fn match_writes_a_preset_of_the_patch_it_searched_for() {
+    // A short note of the bass, as a recording.
+    let reference = temporary("match-reference.wav");
+    let mut instance = Instance::<Reagent>::new().expect("an instance");
+    instance
+        .load_state(&reagent_core::patches::bass().state(&Registry::new()))
+        .expect("the patch loads");
+    instance
+        .activate(lspk_test::render::Settings::new(48_000.0, 512))
+        .expect("active");
+    let note = instance
+        .render(&lspk_test::Script::new(19_200).note(0, 12_800, 48, 0.8))
+        .output;
+    fs::write(
+        &reference,
+        lspk_test::agent::encode_wav(&note).expect("a WAV"),
+    )
+    .expect("a file");
+    let out = temporary("matched.json");
+    let _ = fs::remove_file(&out);
+    let args = MatchArgs {
+        reference,
+        out: out.clone(),
+        evaluations: 24,
+        seed: 3,
+        key: Some(48),
+        hold: None,
+        threads: Some(2),
+    };
+    matching::run(&args).expect("a match");
+    inspect::run(&inspect::InspectArgs { preset: out }).expect("the preset it wrote reads back");
+
+    // A reference that isn't a WAV file fails with its name.
+    let wrong = MatchArgs {
+        reference: temporary("not-a-wav.json"),
+        ..args
+    };
+    fs::write(&wrong.reference, b"{}").expect("a file");
+    let error = matching::run(&wrong).expect_err("not a WAV");
+    assert!(error.contains("not-a-wav.json"), "{error}");
 }

@@ -268,3 +268,68 @@ fn the_server_ends_with_its_input() {
     let stdio = Stdio::spawn(&mut command).expect("starts");
     assert!(stdio.finish().expect("exits").success());
 }
+
+/// One command of a `run` call, and its result.
+fn command(client: &mut Client<Stdio>, id: &str, args: Value) -> Value {
+    run(client, json!([{ "command": id, "args": args }]), false)["results"][0]["result"].clone()
+}
+
+#[test]
+fn an_agent_matches_a_recording_and_sets_the_patch_it_finds() {
+    // A short note of the bass, as a recording.
+    let reference = temporary("match-reference.wav");
+    let mut instance =
+        lspk_test::render::Instance::<reagent_core::Reagent>::new().expect("an instance");
+    instance
+        .load_state(&reagent_core::patches::bass().state(&reagent_engine::Registry::new()))
+        .expect("the patch loads");
+    instance
+        .activate(lspk_test::render::Settings::new(48_000.0, 512))
+        .expect("active");
+    let note = instance
+        .render(&lspk_test::Script::new(19_200).note(0, 12_800, 48, 0.8))
+        .output;
+    fs::write(
+        &reference,
+        lspk_test::agent::encode_wav(&note).expect("a WAV"),
+    )
+    .expect("a file");
+    let args = json!({ "reference": reference.to_string_lossy(), "evaluations": 24, "key": 48 });
+
+    // It reads a file, so a person is asked first; here there is none.
+    let mut client = start(false);
+    let message = fails(
+        &mut client,
+        "run",
+        json!({ "commands": [{ "command": "reagent.match_sound", "args": args }] }),
+    );
+    assert!(
+        message.contains("`reagent.match_sound` is external"),
+        "{message}"
+    );
+
+    let mut client = start(true);
+    let started = command(&mut client, "reagent.match_sound", args);
+    assert_eq!(started["budget"], 24);
+    let status = loop {
+        let status = command(&mut client, "reagent.match_status", json!({}));
+        if status["state"] != "running" {
+            break status;
+        }
+        std::thread::yield_now();
+    };
+    assert_eq!(status["state"], "done", "{status}");
+    let before = cutoff(&mut client);
+    command(&mut client, "reagent.match_apply", json!({}));
+    let found = status["result"]["patch"]["params"]
+        .as_array()
+        .expect("parameters")
+        .iter()
+        .find(|p| p["id"] == cutoff_id())
+        .expect("the cutoff")["value"]
+        .as_f64()
+        .expect("a value");
+    let now = cutoff(&mut client);
+    assert!((now - found).abs() < 1e-3 * found, "{now} against {found}");
+    assert!(before > 0.0);
+}
