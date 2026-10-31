@@ -36,6 +36,7 @@ use reagent_engine::{describe, table};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub mod learnt;
 pub mod matching;
 pub mod patches;
 pub mod preset;

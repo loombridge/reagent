@@ -1,6 +1,7 @@
 //! `reagent-cli`'s verbs, headless: render a preset and a phrase to a WAV,
 //! print what a preset holds, run Reagent's benchmark suite, render datasets of
-//! random patches, search for a patch that sounds like a recording, turn a
+//! random patches, search for a patch that sounds like a recording, train
+//! and measure the model that proposes where the search starts, turn a
 //! description into a patch, and serve the agent interface over stdio.
 //!
 //! Each verb is a function here and a subcommand in the binary, so a test
@@ -11,6 +12,7 @@
 pub mod benchmark;
 pub mod dataset;
 pub mod inspect;
+pub mod match_model;
 pub mod matching;
 pub mod mcp;
 pub mod render;

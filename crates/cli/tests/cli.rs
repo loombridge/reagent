@@ -295,6 +295,7 @@ fn match_writes_a_preset_of_the_patch_it_searched_for() {
         key: Some(48),
         hold: None,
         threads: Some(2),
+        random_start: false,
     };
     matching::run(&args).expect("a match");
     inspect::run(&inspect::InspectArgs { preset: out }).expect("the preset it wrote reads back");
