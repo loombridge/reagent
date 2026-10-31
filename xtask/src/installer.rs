@@ -414,18 +414,14 @@ Description: {SUMMARY}
 /// isn't one of them.
 fn rpm_spec(stage: &Path, arch: &str) -> String {
     let mut files = String::new();
-    for place in PLUGINS
+    for (source, to) in PLUGINS
         .iter()
         .flat_map(|p| payload(Os::Linux, p, Path::new("")))
-        .map(|(source, to)| {
-            Path::new("/")
-                .join(to)
-                .join(source.file_name().unwrap_or_default())
-        })
-        .chain([Path::new("/").join(places(Os::Linux).data)])
     {
-        writeln!(files, "{}", place.display()).unwrap();
+        let name = source.file_name().unwrap_or_default().to_string_lossy();
+        writeln!(files, "/{to}/{name}").unwrap();
     }
+    writeln!(files, "/{}", places(Os::Linux).data).unwrap();
     format!(
         "%global debug_package %{{nil}}
 %global __os_install_post %{{nil}}
@@ -608,6 +604,8 @@ mod tests {
             stage.0.join("ProgramFiles/Loombridge/Reagent"),
         ]);
         let text = manifest(Os::Linux, &stage.0, &tops).unwrap();
+        // Windows writes its own separators.
+        let text = text.replace('\\', "/");
         let lines: Vec<_> = text.lines().collect();
         assert!(
             lines
