@@ -1,0 +1,121 @@
+# Builds this platform's installers with `cargo xtask installer` on macOS
+# (arm64), Windows (x64) and Linux (x64), installs each in a test, checks
+# that everything it installed is there, uninstalls it, and checks that
+# everything is gone (installer/test-*). The installers are uploaded as
+# artifacts, unsigned until the signing work package wires its keys in.
+#
+# It runs on every push to main, when started by hand
+# (`gh workflow run installers.yml --ref <branch>`), and on a pull request that
+# touches what goes into an installer. Actions are pinned as in ci.yml.
+
+name: Installers
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - installer/**
+      - xtask/**
+      - crates/plugin/**
+      - crates/content/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/installers.yml
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+  # WiX, which makes the Windows installer (MS-RL). Change it here only.
+  WIX_VERSION: 5.0.2
+
+jobs:
+  installers:
+    name: installers (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-15
+          - name: Windows x64
+            os: windows-2025
+          - name: Linux x64
+            os: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install --no-self-update
+          rustup show active-toolchain
+
+      # ALSA's headers for the standalone app; rpm for `rpmbuild`.
+      - name: Install Linux system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends pkg-config libasound2-dev rpm
+
+      - name: Install WiX
+        if: runner.os == 'Windows'
+        run: |
+          dotnet tool install --global wix --version "$WIX_VERSION"
+          echo "$USERPROFILE/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Restore the dependency cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: cargo xtask installer
+        run: cargo xtask installer
+
+      - name: Test the macOS package
+        if: runner.os == 'macOS'
+        run: installer/test-macos.sh target/installer/dist/*.pkg target/installer/manifest.txt
+
+      - name: Test the Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: installer/test-windows.ps1 (Get-ChildItem target/installer/dist/*.msi).FullName target/installer/manifest.txt
+
+      # A clean container for each, so the test finds what a package forgot
+      # to depend on.
+      - name: Test the Debian package
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo ubuntu:24.04
+          installer/test-linux.sh deb target/installer/dist/*.deb target/installer/manifest.txt
+
+      - name: Test the RPM package
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo fedora:42
+          installer/test-linux.sh rpm target/installer/dist/*.rpm target/installer/manifest.txt
+
+      - name: Keep the installers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installers-${{ runner.os }}
+          path: target/installer/dist/
+          if-no-files-found: error

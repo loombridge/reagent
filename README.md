@@ -45,6 +45,14 @@ Reagent isn't affiliated with or endorsed by Xfer Records. Serum is a trademark 
 
    `cargo xtask bundle reagent` lays the plug-ins and the standalone app out in `target/bundle`, `cargo xtask golden` checks the golden renders, and `cargo xtask bench` times the benchmarks.
 
+1. Make this platform's installers, unsigned until release signing is set up:
+
+   ```sh
+   cargo xtask installer
+   ```
+
+   It writes `target/installer/dist`: a `.pkg` on macOS (it needs `pkgbuild` and `productbuild`, which come with Xcode's command-line tools), an `.msi` on Windows (it needs [WiX](https://wixtoolset.org) 5, `dotnet tool install --global wix --version 5.0.2`) and a `.deb` and an `.rpm` on Linux (they need `dpkg-deb` and `rpmbuild`). Each carries the CLAP, VST3 and, on macOS, Audio Unit plug-ins, the standalone app, and the factory content from `crates/content/factory`; the plug-ins go where hosts look for them, and `target/installer/manifest.txt` lists every path installed. CI's Installers workflow builds them on all three platforms, installs each, checks the manifest, uninstalls it and checks again (`installer/test-*`). The macOS package installs an `uninstall.sh` beside the factory content; Windows and Linux use their own uninstallers.
+
 Reagent depends on the plug-in kit by git revision. To work on both at once, see [CONTRIBUTING.md](CONTRIBUTING.md#working-on-the-plug-in-kit-and-reagent-at-once).
 
 ## Headless

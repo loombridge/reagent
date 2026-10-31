@@ -12,6 +12,8 @@ publish.workspace = true
 # The kit's tasks (check, bundle, validate, golden, bench), at the same
 # revision as every other kit crate.
 lspk-xtask.workspace = true
+# Reads the target directory from `cargo metadata`, for `cargo xtask installer`.
+serde_json = "1"
 
 [lints]
 workspace = true
