@@ -36,6 +36,7 @@ use reagent_engine::{describe, table};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub mod matching;
 pub mod patches;
 pub mod preset;
 pub mod tuning;
@@ -169,6 +170,8 @@ pub struct Reagent {
     /// What the interface named the command now running, for the undo
     /// history to record the step under ([`Plugin::run_command_labelled`]).
     undo_label: Option<String>,
+    /// The last sound-matching search, running or done.
+    matching: Option<matching::Job>,
 }
 
 impl std::fmt::Debug for Reagent {
@@ -220,6 +223,18 @@ impl Reagent {
             *self.telemetry.lock().unwrap_or_else(|e| e.into_inner()) = watcher;
             publisher
         })
+    }
+
+    /// Puts every parameter at its default and empties the matrix, without
+    /// telling the audio thread: the commands that do this send the result.
+    fn init_patch(&mut self) -> Result<(), PluginError> {
+        for param in self.registry.space.descriptors() {
+            self.host
+                .edit(param.id, param.default)
+                .map_err(|e| PluginError::new(e.to_string()))?;
+        }
+        self.matrix = Matrix::new();
+        Ok(())
     }
 
     /// Copies the note curves' switches from the parameters into the matrix,
@@ -325,6 +340,7 @@ impl Plugin for Reagent {
             stepping: Stepping::new(),
             preset_path: None,
             undo_label: None,
+            matching: None,
         }
     }
 
@@ -467,6 +483,7 @@ impl Plugin for Reagent {
         lspk_mod::register(registry)?;
         preset::register(registry)?;
         tuning::register(registry)?;
+        matching::register(registry)?;
         for spec in [
             CommandSpec::new(INIT_PATCH, "Init Patch")
                 .description(
@@ -525,12 +542,7 @@ impl Plugin for Reagent {
         args: &serde_json::Value,
     ) -> Result<serde_json::Value, PluginError> {
         if id == INIT_PATCH {
-            for param in self.registry.space.descriptors() {
-                self.host
-                    .edit(param.id, param.default)
-                    .map_err(|e| PluginError::new(e.to_string()))?;
-            }
-            self.matrix = Matrix::new();
+            self.init_patch()?;
             self.send_matrix();
             self.recompile();
             self.host.mark_dirty();
@@ -610,6 +622,9 @@ impl Plugin for Reagent {
         }
         if id.starts_with("tuning.") || id == tuning::SET_STEPPING {
             return tuning::run(self, id, args);
+        }
+        if id.starts_with("reagent.match_") {
+            return matching::run(self, id, args);
         }
         Err(PluginError::new(format!("no command `{id}`")))
     }

@@ -14,14 +14,14 @@ lspk-mod.workspace = true
 lspk-params.workspace = true
 lspk-plugin.workspace = true
 lspk-presets.workspace = true
+# The render harness and the perception features a search matches by, without
+# the format hosts: the kit's agent interface uses them in the plug-in the same way.
+lspk-test = { workspace = true, default-features = false }
 reagent-engine.workspace = true
 # Pinned to lspk-commands' version: the preset commands' schemas come from it.
 schemars = { version = "=1.2.2", default-features = false, features = ["std", "derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-[dev-dependencies]
-lspk-test = { workspace = true, default-features = false }
 
 [lints]
 workspace = true

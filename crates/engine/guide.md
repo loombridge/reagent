@@ -22,6 +22,10 @@ Four envelopes (`Env 1` is also the amplifier), ten LFOs (synced to the tempo by
 
 Keys sound in twelve-tone equal temperament unless a tuning says otherwise. `tuning.load` tunes the instance by a `.tun` file or a Scala `.scl` (with its `.kbm` mapping in `keymap`); `tuning.clear` drops it. With no file, the instance follows an MTS-ESP master when one is connected (`tuning.set_mts` turns that off, or reads the master at each note's start only). A file always overrides MTS-ESP. `Reference pitch` and `Main tuning` apply on top of any tuning. `tuning.lock` keeps the tuning file and `Reference pitch` through a preset load. `preset.step` loads the next or previous preset among the files beside the last one loaded or saved; `preset.set_stepping` assigns the MIDI controllers or keys that do the same.
 
+## Matching a recording
+
+To make a patch that sounds like a recording of one held note, run `reagent.match_sound` with the WAV file's `reference` (and its `key` and `hold`, if you know them). It returns at once; the search renders candidate patches on a thread of its own, so poll `reagent.match_status` until its `state` is `done`: `evaluations` of `budget` and `best_distance` show progress, and `result` holds the patch and a `report` whose `closeness` says how near it got (1 is the same features). `reagent.match_apply` sets the patch; `reagent.match_cancel` stops early and keeps the best so far. It sets oscillators A and B, Filter 1, Env 1 and 2, LFO 1 and their routes to the cutoff; start from it and refine by ear with `preview`, adding what it can't (the sub, the noise, effects) yourself. A bigger `evaluations` finds a nearer patch and takes longer.
+
 ## Getting good results
 
 - Start from the Init patch (`reagent.init_patch`): one saw on oscillator A through Filter 1, which is off.
