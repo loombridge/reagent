@@ -64,18 +64,18 @@ pub struct TextToPatchArgs {
 
 /// What the loop reads from a render, from the perception features.
 #[derive(Clone, Copy, Debug)]
-struct Readings {
+pub(crate) struct Readings {
     /// How far above the note the spectrum's centre sits, in octaves.
-    brightness_oct: Option<f64>,
-    attack_s: f64,
-    width: f64,
-    pitch_hz: Option<f64>,
-    level_db: f64,
-    duration_s: f64,
+    pub(crate) brightness_oct: Option<f64>,
+    pub(crate) attack_s: f64,
+    pub(crate) width: f64,
+    pub(crate) pitch_hz: Option<f64>,
+    pub(crate) level_db: f64,
+    pub(crate) duration_s: f64,
 }
 
 impl Readings {
-    fn of(f: &features::Features) -> Self {
+    pub(crate) fn of(f: &features::Features) -> Self {
         // The mean of the bands' centres on a log scale, each band weighted
         // by its level in dB above the spectrum's floor, so a quiet top
         // octave still counts: a plain power weighting reads a saw and the

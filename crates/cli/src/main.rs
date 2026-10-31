@@ -77,6 +77,17 @@ enum Command {
     /// nearer to, or to the random search's distance in fewer evaluations.
     /// Exits with status 1 if the dataset can't be read.
     CompareMatch(reagent_cli::match_model::CompareArgs),
+    /// Score sound matching on a fixed set of references.
+    ///
+    /// Renders the references (patches Loombridge made), matches each with
+    /// `match_sound` at each budget, from random points only, and as the Init
+    /// patch, and, given a command after `--`, with that tool; scores every
+    /// result against the reference by the perception features' distance and
+    /// the error in each reading, and prints the results as JSON. The same
+    /// arguments give the same scores. `--write-references` writes the
+    /// references as WAV files and stops. Exits with status 1 if a file can't
+    /// be written or a tool fails.
+    MatchBenchmark(reagent_cli::match_benchmark::BenchmarkArgs),
     /// Build a patch from a description, or run the evaluation set.
     ///
     /// Picks the recipe for the instrument word (bass, lead, pad or pluck),
@@ -108,6 +119,7 @@ fn main() -> ExitCode {
         Command::Match(args) => reagent_cli::matching::run(args),
         Command::TrainMatch(args) => reagent_cli::match_model::train(args),
         Command::CompareMatch(args) => reagent_cli::match_model::compare(args),
+        Command::MatchBenchmark(args) => reagent_cli::match_benchmark::run(args),
         Command::TextToPatch(args) => reagent_cli::text_to_patch::run(args),
         Command::Mcp(args) => reagent_cli::mcp::run(args),
     };

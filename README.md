@@ -67,6 +67,7 @@ reagent-cli dataset --out dir --count 1000 [--seed 0] [--audio] [--threads n]
 reagent-cli match --reference note.wav --out patch.json [--evaluations 600] [--seed 0] [--key 48] [--hold 1.0] [--threads n] [--random-start]
 reagent-cli train-match --dataset dir [--dataset dir ...] --out model.bin [--hidden 64] [--epochs 80] [--seed 0] [--threads n]
 reagent-cli compare-match --dataset dir [--cases 20] [--evaluations 150] [--threads n]
+reagent-cli match-benchmark [--out results.json] [--budgets 150,600] [--seeds 3] [--references 20] [--threads n] [--write-references dir] [--scratch dir -- <command>]
 reagent-cli text-to-patch ["a dark, wide pad"] [--out results.json]
 reagent-cli mcp [--autonomous]
 ```
@@ -77,6 +78,7 @@ reagent-cli mcp [--autonomous]
 - **dataset** draws random, playable patches from a seed, renders each, and writes the patches with features measured on the renders, for training and for sound matching (below).
 - **match** searches for a patch that sounds like a recording and writes it as a preset (below). `--random-start` leaves out the learnt model's patch.
 - **train-match** trains the model that proposes where `match` starts, from datasets `dataset` made, and **compare-match** measures it against random starts on a dataset it never saw (below).
+- **match-benchmark** scores matching on a fixed set of twenty references (below).
 - **text-to-patch** builds a patch from a description by the loop an agent runs: a recipe for the instrument word (bass, lead, pad or pluck), then for each quality word (dark, bright, wide, slow, snappy) it renders a note, reads the perception features and moves one control until the reading fits, and last it sets the level. It prints the patch's parameters, each step and the final readings as JSON. With no description it runs the evaluation set (below) and exits `1` if a case fails its judge.
 - **mcp** serves the agent interface over standard input and output, for an agent client to start. It offers the same tools the plug-in offers inside a host: `list_commands`, `describe_command`, `run` (a batch is all or nothing, and `dry_run` checks without changing anything), `query` (every parameter by ID, name or path, with a summary of the signal path), `checkpoint`, `preview` (renders a note, chord or phrase and returns the audio with an analysis) and the guides. Destructive and external commands, such as saving and loading preset files, are refused with the reason unless `--autonomous` is given. It exits `0` when standard input ends.
 
@@ -110,6 +112,10 @@ A small neural network proposes a patch from the recording's perception features
 - **Training data:** the patches of two datasets (`reagent-cli dataset --count 20000 --seed 100` and `--count 60000 --seed 101`, no audio) that the search space can make, 45,269 of them (patches with the sub or the noise on, or an LFO routed to a frame, are outside it). Each is rendered again for the features, since a dataset's own features are the simple ones. The network was made with `reagent-cli train-match --dataset a --dataset b --out crates/core/src/match_model.bin --hidden 128 --epochs 80`, which gives the same file for the same datasets. The dataset plays one key (48), so the network is best on recordings near it; retrain it when the search space changes (a test fails until you do).
 - **Measured on held-out renders:** `evidence/match-model/` holds `reagent-cli compare-match` on 40 patches of a dataset with seed 1, which the network never saw, each matched twice with the same budget and seed. With 150 candidates, matching from the model's patch ends nearer in 25 of the 40 cases, at a mean distance of 0.94 against 1.08 from random points (the Init patch's is 3.66), and reaches the random search's final distance in fewer candidates in 15. With the default 600 candidates the two are level (0.676 against 0.684; nearer in 17 of 40): the model saves candidates, and the search closes the gap when it has them. `matching_from_the_models_patch_gets_nearer_than_from_random_points` runs the 150-candidate comparison; build in release (`cargo nextest run --release`), as a debug build skips it.
 
+
+### The benchmark
+
+`reagent-cli match-benchmark` scores `match_sound` on twenty references, notes rendered from patches Loombridge made (sixteen the dataset sampler draws from seed 2026, four designed by hand; half are patches the search can't set exactly), by the perception features' distance and the error in each reading (brightness, pitch, level, attack, duration, width). It also scores the same search from random points only and the Init patch, and, given a command after `--` (run as `program args… <reference.wav> <out.wav>`, with `--scratch` outside any repository), any other tool. The same arguments give the same scores on any number of threads. `--write-references dir` writes the references as WAV files. The results of a run are in [`evidence/match-benchmark/results.json`](evidence/match-benchmark/results.json): with 600 candidates, `match_sound` closes 71 % of the way from the Init patch to the reference on average (1 minus its distance over the Init patch's); the run takes five minutes in release.
 
 ## Text to patch
 

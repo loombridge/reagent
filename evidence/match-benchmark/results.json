@@ -1,0 +1,745 @@
+{
+  "format": 1,
+  "mean_seconds": {
+    "match_sound-150": 0.5233,
+    "match_sound-600": 1.8666,
+    "random_search-150": 0.4973,
+    "random_search-600": 1.8833
+  },
+  "references": [
+    {
+      "in_space": false,
+      "init_distance": 4.212,
+      "kind": "drawn",
+      "name": "drawn-00"
+    },
+    {
+      "in_space": true,
+      "init_distance": 4.5334,
+      "kind": "drawn",
+      "name": "drawn-01"
+    },
+    {
+      "in_space": true,
+      "init_distance": 2.5258,
+      "kind": "drawn",
+      "name": "drawn-02"
+    },
+    {
+      "in_space": false,
+      "init_distance": 1.8893,
+      "kind": "drawn",
+      "name": "drawn-03"
+    },
+    {
+      "in_space": false,
+      "init_distance": 2.8984,
+      "kind": "drawn",
+      "name": "drawn-04"
+    },
+    {
+      "in_space": true,
+      "init_distance": 1.8878,
+      "kind": "drawn",
+      "name": "drawn-05"
+    },
+    {
+      "in_space": false,
+      "init_distance": 0.8458,
+      "kind": "drawn",
+      "name": "drawn-06"
+    },
+    {
+      "in_space": false,
+      "init_distance": 1.5563,
+      "kind": "drawn",
+      "name": "drawn-07"
+    },
+    {
+      "in_space": false,
+      "init_distance": 1.1909,
+      "kind": "drawn",
+      "name": "drawn-08"
+    },
+    {
+      "in_space": true,
+      "init_distance": 4.4573,
+      "kind": "drawn",
+      "name": "drawn-09"
+    },
+    {
+      "in_space": false,
+      "init_distance": 4.0956,
+      "kind": "drawn",
+      "name": "drawn-10"
+    },
+    {
+      "in_space": true,
+      "init_distance": 2.5697,
+      "kind": "drawn",
+      "name": "drawn-11"
+    },
+    {
+      "in_space": true,
+      "init_distance": 2.212,
+      "kind": "drawn",
+      "name": "drawn-12"
+    },
+    {
+      "in_space": true,
+      "init_distance": 1.7306,
+      "kind": "drawn",
+      "name": "drawn-13"
+    },
+    {
+      "in_space": true,
+      "init_distance": 4.64,
+      "kind": "drawn",
+      "name": "drawn-14"
+    },
+    {
+      "in_space": true,
+      "init_distance": 4.083,
+      "kind": "drawn",
+      "name": "drawn-15"
+    },
+    {
+      "in_space": false,
+      "init_distance": 2.0299,
+      "kind": "designed",
+      "name": "supersaw"
+    },
+    {
+      "in_space": false,
+      "init_distance": 2.4924,
+      "kind": "designed",
+      "name": "unison16"
+    },
+    {
+      "in_space": true,
+      "init_distance": 2.9991,
+      "kind": "designed",
+      "name": "bass"
+    },
+    {
+      "in_space": false,
+      "init_distance": 3.1473,
+      "kind": "designed",
+      "name": "pad"
+    }
+  ],
+  "setup": {
+    "budgets": [
+      150,
+      600
+    ],
+    "closeness": "1 minus the distance over the Init patch's: 1 for a match, 0 for no nearer than Init",
+    "distance": "the plug-in kit's perception distance: 0 for the same features, about 1 for a difference a listener calls large, no upper bound; a sound that renders silence counts 100",
+    "mean_abs_error": "brightness_oct in octaves, pitch_cents in cents, level_db in dB, attack_s and duration_s in seconds, width from 0 to 1",
+    "note": {
+      "hold_s": 1.0,
+      "key": 48,
+      "render_s": 1.5
+    },
+    "reference_seed": 2026,
+    "sample_rate": 48000.0,
+    "seeds": 3
+  },
+  "tools": {
+    "init": {
+      "per_reference": [
+        {
+          "closeness": 0.0,
+          "distance": 4.212,
+          "reference": "drawn-00"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 4.5334,
+          "reference": "drawn-01"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 2.5258,
+          "reference": "drawn-02"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 1.8893,
+          "reference": "drawn-03"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 2.8984,
+          "reference": "drawn-04"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 1.8878,
+          "reference": "drawn-05"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 0.8458,
+          "reference": "drawn-06"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 1.5563,
+          "reference": "drawn-07"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 1.1909,
+          "reference": "drawn-08"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 4.4573,
+          "reference": "drawn-09"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 4.0956,
+          "reference": "drawn-10"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 2.5697,
+          "reference": "drawn-11"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 2.212,
+          "reference": "drawn-12"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 1.7306,
+          "reference": "drawn-13"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 4.64,
+          "reference": "drawn-14"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 4.083,
+          "reference": "drawn-15"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 2.0299,
+          "reference": "supersaw"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 2.4924,
+          "reference": "unison16"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 2.9991,
+          "reference": "bass"
+        },
+        {
+          "closeness": 0.0,
+          "distance": 3.1473,
+          "reference": "pad"
+        }
+      ],
+      "summary": {
+        "mean_abs_error": {
+          "attack_s": 0.0852,
+          "brightness_oct": 0.7964,
+          "duration_s": 0.2795,
+          "level_db": 4.0902,
+          "pitch_cents": 6.7478,
+          "width": 0.2521
+        },
+        "mean_closeness": 0.0,
+        "mean_distance": 2.7998,
+        "median_distance": 2.5478,
+        "nearest_on": 0,
+        "silent": 0
+      }
+    },
+    "match_sound-150": {
+      "per_reference": [
+        {
+          "closeness": 0.6993,
+          "distance": 1.2666,
+          "reference": "drawn-00"
+        },
+        {
+          "closeness": 0.7966,
+          "distance": 0.9223,
+          "reference": "drawn-01"
+        },
+        {
+          "closeness": 0.8256,
+          "distance": 0.4404,
+          "reference": "drawn-02"
+        },
+        {
+          "closeness": 0.5802,
+          "distance": 0.7931,
+          "reference": "drawn-03"
+        },
+        {
+          "closeness": 0.7001,
+          "distance": 0.8693,
+          "reference": "drawn-04"
+        },
+        {
+          "closeness": 0.6464,
+          "distance": 0.6675,
+          "reference": "drawn-05"
+        },
+        {
+          "closeness": 0.0806,
+          "distance": 0.7776,
+          "reference": "drawn-06"
+        },
+        {
+          "closeness": 0.5093,
+          "distance": 0.7637,
+          "reference": "drawn-07"
+        },
+        {
+          "closeness": 0.0905,
+          "distance": 1.0831,
+          "reference": "drawn-08"
+        },
+        {
+          "closeness": 0.8055,
+          "distance": 0.8668,
+          "reference": "drawn-09"
+        },
+        {
+          "closeness": 0.5979,
+          "distance": 1.647,
+          "reference": "drawn-10"
+        },
+        {
+          "closeness": 0.6448,
+          "distance": 0.9128,
+          "reference": "drawn-11"
+        },
+        {
+          "closeness": 0.5613,
+          "distance": 0.9703,
+          "reference": "drawn-12"
+        },
+        {
+          "closeness": 0.3469,
+          "distance": 1.1303,
+          "reference": "drawn-13"
+        },
+        {
+          "closeness": 0.836,
+          "distance": 0.761,
+          "reference": "drawn-14"
+        },
+        {
+          "closeness": 0.7235,
+          "distance": 1.1288,
+          "reference": "drawn-15"
+        },
+        {
+          "closeness": 0.5594,
+          "distance": 0.8945,
+          "reference": "supersaw"
+        },
+        {
+          "closeness": 0.4521,
+          "distance": 1.3655,
+          "reference": "unison16"
+        },
+        {
+          "closeness": 0.6024,
+          "distance": 1.1925,
+          "reference": "bass"
+        },
+        {
+          "closeness": 0.4923,
+          "distance": 1.598,
+          "reference": "pad"
+        }
+      ],
+      "summary": {
+        "mean_abs_error": {
+          "attack_s": 0.0832,
+          "brightness_oct": 0.1735,
+          "duration_s": 0.0878,
+          "level_db": 5.0776,
+          "pitch_cents": 87.0047,
+          "width": 0.104
+        },
+        "mean_closeness": 0.5775,
+        "mean_distance": 1.0026,
+        "median_distance": 0.9176,
+        "nearest_on": 0,
+        "silent": 0
+      }
+    },
+    "match_sound-600": {
+      "per_reference": [
+        {
+          "closeness": 0.7155,
+          "distance": 1.1985,
+          "reference": "drawn-00"
+        },
+        {
+          "closeness": 0.8866,
+          "distance": 0.5143,
+          "reference": "drawn-01"
+        },
+        {
+          "closeness": 0.949,
+          "distance": 0.1288,
+          "reference": "drawn-02"
+        },
+        {
+          "closeness": 0.7021,
+          "distance": 0.5629,
+          "reference": "drawn-03"
+        },
+        {
+          "closeness": 0.8277,
+          "distance": 0.4994,
+          "reference": "drawn-04"
+        },
+        {
+          "closeness": 0.8723,
+          "distance": 0.241,
+          "reference": "drawn-05"
+        },
+        {
+          "closeness": 0.4766,
+          "distance": 0.4426,
+          "reference": "drawn-06"
+        },
+        {
+          "closeness": 0.5954,
+          "distance": 0.6297,
+          "reference": "drawn-07"
+        },
+        {
+          "closeness": 0.4548,
+          "distance": 0.6492,
+          "reference": "drawn-08"
+        },
+        {
+          "closeness": 0.8746,
+          "distance": 0.5588,
+          "reference": "drawn-09"
+        },
+        {
+          "closeness": 0.7582,
+          "distance": 0.9904,
+          "reference": "drawn-10"
+        },
+        {
+          "closeness": 0.8033,
+          "distance": 0.5055,
+          "reference": "drawn-11"
+        },
+        {
+          "closeness": 0.5682,
+          "distance": 0.9551,
+          "reference": "drawn-12"
+        },
+        {
+          "closeness": 0.436,
+          "distance": 0.976,
+          "reference": "drawn-13"
+        },
+        {
+          "closeness": 0.8938,
+          "distance": 0.4929,
+          "reference": "drawn-14"
+        },
+        {
+          "closeness": 0.8489,
+          "distance": 0.6168,
+          "reference": "drawn-15"
+        },
+        {
+          "closeness": 0.6885,
+          "distance": 0.6322,
+          "reference": "supersaw"
+        },
+        {
+          "closeness": 0.6113,
+          "distance": 0.9687,
+          "reference": "unison16"
+        },
+        {
+          "closeness": 0.6374,
+          "distance": 1.0875,
+          "reference": "bass"
+        },
+        {
+          "closeness": 0.565,
+          "distance": 1.3691,
+          "reference": "pad"
+        }
+      ],
+      "summary": {
+        "mean_abs_error": {
+          "attack_s": 0.0548,
+          "brightness_oct": 0.1049,
+          "duration_s": 0.029,
+          "level_db": 1.9904,
+          "pitch_cents": 29.8729,
+          "width": 0.0674
+        },
+        "mean_closeness": 0.7083,
+        "mean_distance": 0.701,
+        "median_distance": 0.6233,
+        "nearest_on": 11,
+        "silent": 0
+      }
+    },
+    "random_search-150": {
+      "per_reference": [
+        {
+          "closeness": 0.6919,
+          "distance": 1.2977,
+          "reference": "drawn-00"
+        },
+        {
+          "closeness": 0.8091,
+          "distance": 0.8656,
+          "reference": "drawn-01"
+        },
+        {
+          "closeness": 0.7591,
+          "distance": 0.6086,
+          "reference": "drawn-02"
+        },
+        {
+          "closeness": 0.5164,
+          "distance": 0.9136,
+          "reference": "drawn-03"
+        },
+        {
+          "closeness": 0.6872,
+          "distance": 0.9065,
+          "reference": "drawn-04"
+        },
+        {
+          "closeness": 0.5849,
+          "distance": 0.7837,
+          "reference": "drawn-05"
+        },
+        {
+          "closeness": 0.2384,
+          "distance": 0.6441,
+          "reference": "drawn-06"
+        },
+        {
+          "closeness": 0.4159,
+          "distance": 0.9091,
+          "reference": "drawn-07"
+        },
+        {
+          "closeness": 0.1041,
+          "distance": 1.0669,
+          "reference": "drawn-08"
+        },
+        {
+          "closeness": 0.8003,
+          "distance": 0.89,
+          "reference": "drawn-09"
+        },
+        {
+          "closeness": 0.4927,
+          "distance": 2.0779,
+          "reference": "drawn-10"
+        },
+        {
+          "closeness": 0.6772,
+          "distance": 0.8295,
+          "reference": "drawn-11"
+        },
+        {
+          "closeness": 0.5211,
+          "distance": 1.0594,
+          "reference": "drawn-12"
+        },
+        {
+          "closeness": 0.2427,
+          "distance": 1.3106,
+          "reference": "drawn-13"
+        },
+        {
+          "closeness": 0.7557,
+          "distance": 1.1335,
+          "reference": "drawn-14"
+        },
+        {
+          "closeness": 0.7842,
+          "distance": 0.8809,
+          "reference": "drawn-15"
+        },
+        {
+          "closeness": 0.4853,
+          "distance": 1.0449,
+          "reference": "supersaw"
+        },
+        {
+          "closeness": 0.4137,
+          "distance": 1.4613,
+          "reference": "unison16"
+        },
+        {
+          "closeness": 0.5811,
+          "distance": 1.2564,
+          "reference": "bass"
+        },
+        {
+          "closeness": 0.4967,
+          "distance": 1.5842,
+          "reference": "pad"
+        }
+      ],
+      "summary": {
+        "mean_abs_error": {
+          "attack_s": 0.0939,
+          "brightness_oct": 0.1558,
+          "duration_s": 0.1235,
+          "level_db": 5.3503,
+          "pitch_cents": 62.3773,
+          "width": 0.1175
+        },
+        "mean_closeness": 0.5529,
+        "mean_distance": 1.0762,
+        "median_distance": 0.9793,
+        "nearest_on": 0,
+        "silent": 0
+      }
+    },
+    "random_search-600": {
+      "per_reference": [
+        {
+          "closeness": 0.7359,
+          "distance": 1.1124,
+          "reference": "drawn-00"
+        },
+        {
+          "closeness": 0.8668,
+          "distance": 0.6039,
+          "reference": "drawn-01"
+        },
+        {
+          "closeness": 0.9162,
+          "distance": 0.2118,
+          "reference": "drawn-02"
+        },
+        {
+          "closeness": 0.6942,
+          "distance": 0.5777,
+          "reference": "drawn-03"
+        },
+        {
+          "closeness": 0.8173,
+          "distance": 0.5295,
+          "reference": "drawn-04"
+        },
+        {
+          "closeness": 0.8278,
+          "distance": 0.3251,
+          "reference": "drawn-05"
+        },
+        {
+          "closeness": 0.4195,
+          "distance": 0.491,
+          "reference": "drawn-06"
+        },
+        {
+          "closeness": 0.6129,
+          "distance": 0.6024,
+          "reference": "drawn-07"
+        },
+        {
+          "closeness": 0.4959,
+          "distance": 0.6003,
+          "reference": "drawn-08"
+        },
+        {
+          "closeness": 0.8766,
+          "distance": 0.5499,
+          "reference": "drawn-09"
+        },
+        {
+          "closeness": 0.6217,
+          "distance": 1.5495,
+          "reference": "drawn-10"
+        },
+        {
+          "closeness": 0.8332,
+          "distance": 0.4287,
+          "reference": "drawn-11"
+        },
+        {
+          "closeness": 0.5633,
+          "distance": 0.966,
+          "reference": "drawn-12"
+        },
+        {
+          "closeness": 0.4448,
+          "distance": 0.9607,
+          "reference": "drawn-13"
+        },
+        {
+          "closeness": 0.8419,
+          "distance": 0.7335,
+          "reference": "drawn-14"
+        },
+        {
+          "closeness": 0.8462,
+          "distance": 0.6279,
+          "reference": "drawn-15"
+        },
+        {
+          "closeness": 0.6875,
+          "distance": 0.6344,
+          "reference": "supersaw"
+        },
+        {
+          "closeness": 0.6389,
+          "distance": 0.9001,
+          "reference": "unison16"
+        },
+        {
+          "closeness": 0.6509,
+          "distance": 1.0469,
+          "reference": "bass"
+        },
+        {
+          "closeness": 0.5804,
+          "distance": 1.3207,
+          "reference": "pad"
+        }
+      ],
+      "summary": {
+        "mean_abs_error": {
+          "attack_s": 0.0627,
+          "brightness_oct": 0.0988,
+          "duration_s": 0.0289,
+          "level_db": 2.7304,
+          "pitch_cents": 9.017,
+          "width": 0.0658
+        },
+        "mean_closeness": 0.6986,
+        "mean_distance": 0.7386,
+        "median_distance": 0.6159,
+        "nearest_on": 9,
+        "silent": 0
+      }
+    }
+  }
+}
