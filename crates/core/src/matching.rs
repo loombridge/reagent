@@ -8,7 +8,9 @@
 //! the engine isn't differentiable and some of the parameters (filter type,
 //! unison count) are choices:
 //!
-//! 1. a random batch over the whole [`Space`], to find where to look;
+//! 1. a random batch over the whole [`Space`], and the patch the learnt
+//!    model proposes for the reference ([`learnt`], R9.4), to find where to
+//!    look;
 //! 2. an elitist evolution strategy from the best few of those: each batch
 //!    of children is a parent plus Gaussian noise on some of the dimensions,
 //!    and the noise shrinks batch by batch, so the search narrows.
@@ -49,6 +51,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::Reagent;
+use crate::learnt;
 use crate::patches::Patch;
 
 /// `reagent.match_sound`: start a search for a patch that sounds like a
@@ -101,6 +104,8 @@ struct Dim {
     low: f64,
     high: f64,
     scale: Scale,
+    /// What the parameter is at when a patch doesn't set it.
+    default: f64,
 }
 
 impl Dim {
@@ -112,6 +117,22 @@ impl Dim {
                 (self.low + (unit * (self.high - self.low + 1.0)).floor()).min(self.high)
             }
         }
+    }
+
+    /// The point of the unit range that decodes to `real`: the middle of
+    /// its share, for a whole number.
+    fn unit(&self, real: f64) -> f64 {
+        let unit = match self.scale {
+            Scale::Linear => (real - self.low) / (self.high - self.low),
+            Scale::Log => (real / self.low).ln() / (self.high / self.low).ln(),
+            Scale::Whole => (real - self.low + 0.5) / (self.high - self.low + 1.0),
+        };
+        unit.clamp(0.0, 1.0 - f64::EPSILON)
+    }
+
+    /// Whether `real` is in the dimension's range.
+    fn holds(&self, real: f64) -> bool {
+        (self.low - 1e-9..=self.high + 1e-9).contains(&real)
     }
 }
 
@@ -148,11 +169,16 @@ impl Space {
     /// The search space: see the [module](self).
     #[must_use]
     pub fn new() -> Self {
+        let descriptors = Registry::new().space.descriptors();
         let dim = |id, low, high, scale| Dim {
             id,
             low,
             high,
             scale,
+            default: descriptors
+                .iter()
+                .find(|d| d.id == id)
+                .map_or(low, |d| d.default),
         };
         let osc = |s: u8, p| id(OSC, s, p);
         let mut dims = vec![
@@ -256,13 +282,64 @@ impl Space {
             routes,
         }
     }
+
+    /// The point that decodes to a patch setting `params` (the rest at their
+    /// defaults) and making `routes` (source key, destination, amount,
+    /// polarity); `None` if the space can't make it: a parameter or route
+    /// outside it, or a value outside its range. The two oscillators' outputs
+    /// and the LFO's sync are not read: [`Self::decode`] sets them from the
+    /// filter and the free-running LFO the space makes.
+    #[must_use]
+    pub fn encode(
+        &self,
+        params: &[(ParamId, f64)],
+        routes: &[(&str, ParamId, f32, Polarity)],
+    ) -> Option<Vec<f64>> {
+        let fixed = [
+            id(OSC, 0, channel::OUTPUT),
+            id(OSC, 1, channel::OUTPUT),
+            id(LFO, 0, lfo::SYNC),
+        ];
+        let known = |param| fixed.contains(param) || self.dims.iter().any(|d| d.id == *param);
+        if !params.iter().all(|(param, _)| known(param))
+            || !routes.iter().all(|(source, destination, _, polarity)| {
+                self.routes.iter().any(|r| {
+                    r.source == *source && r.destination == *destination && r.polarity == *polarity
+                })
+            })
+        {
+            return None;
+        }
+        let mut point = Vec::with_capacity(self.len());
+        for dim in &self.dims {
+            // A parameter the patch leaves alone is at its default, which may
+            // lie outside the range (Env 2's sustain, in percent): it is
+            // clamped, since nothing reads it unless the patch sets it.
+            let real = match params.iter().rfind(|(param, _)| *param == dim.id) {
+                Some((_, value)) if dim.holds(*value) => *value,
+                Some(_) => return None,
+                None => dim.default,
+            };
+            point.push(dim.unit(real));
+        }
+        for route in &self.routes {
+            let amount = routes
+                .iter()
+                .find(|(source, destination, ..)| {
+                    route.source == *source && route.destination == *destination
+                })
+                .map_or(0.0, |(_, _, amount, _)| *amount);
+            point.push((f64::from(amount) / f64::from(route.high)).clamp(0.0, 1.0 - f64::EPSILON));
+        }
+        Some(point)
+    }
 }
 
 /// SplitMix64: a small generator whose output is fixed by its seed.
-struct Rng(u64);
+pub(crate) struct Rng(pub(crate) u64);
 
 impl Rng {
-    fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -271,15 +348,26 @@ impl Rng {
     }
 
     /// Uniform in [0, 1).
-    fn unit(&mut self) -> f64 {
+    pub(crate) fn unit(&mut self) -> f64 {
         (self.next() >> 11) as f64 / (1u64 << 53) as f64
     }
 
     /// Normally distributed, mean 0 and deviation 1 (Box–Muller).
-    fn normal(&mut self) -> f64 {
+    pub(crate) fn normal(&mut self) -> f64 {
         let (u, v) = (1.0 - self.unit(), self.unit());
         (-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos()
     }
+}
+
+/// Where a search looks first.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Start {
+    /// The patch the learnt model proposes for the reference ([`learnt`]),
+    /// beside the random points.
+    #[default]
+    Learnt,
+    /// Random points only.
+    Random,
 }
 
 /// What to search for, and how hard.
@@ -298,6 +386,8 @@ pub struct Args {
     pub hold: Option<f64>,
     /// How many threads render; one per core if `None`.
     pub threads: Option<usize>,
+    /// Where the search looks first.
+    pub start: Start,
 }
 
 impl Args {
@@ -341,6 +431,28 @@ pub struct Match {
     pub cancelled: bool,
 }
 
+/// `patch` playing `key` for `hold` seconds, in a render of `seconds`, at
+/// `rate`: the note a search judges its candidates by.
+///
+/// # Errors
+///
+/// The patch can't be loaded.
+pub fn render(
+    patch: &Patch,
+    registry: &Registry,
+    rate: f64,
+    key: u8,
+    hold: f64,
+    seconds: f64,
+) -> Result<Output, String> {
+    let mut instance = Instance::<Reagent>::new()?;
+    instance.load_state(&patch.state(registry))?;
+    instance.activate(Settings::new(rate, BLOCK))?;
+    let frames = |seconds: f64| (seconds * rate).round() as usize;
+    let script = Script::new(frames(seconds)).note(0, frames(hold) as u32, key, VELOCITY);
+    Ok(instance.render(&script).output)
+}
+
 /// What renders candidates: the reference's features and the note they play.
 struct Judge {
     reference: Features,
@@ -354,24 +466,21 @@ struct Judge {
 impl Judge {
     /// How far `patch` renders from the reference.
     fn distance(&self, patch: &Patch) -> f64 {
-        let render = || -> Result<Option<Features>, String> {
-            let mut instance = Instance::<Reagent>::new()?;
-            instance.load_state(&patch.state(&self.registry))?;
-            instance.activate(Settings::new(self.rate, BLOCK))?;
-            let frames = |seconds: f64| (seconds * self.rate).round() as usize;
-            let script = Script::new(frames(self.seconds)).note(
-                0,
-                frames(self.hold) as u32,
+        let rendered = || -> Result<Option<Features>, String> {
+            let output = render(
+                patch,
+                &self.registry,
+                self.rate,
                 self.key,
-                VELOCITY,
-            );
-            let output = instance.render(&script).output;
+                self.hold,
+                self.seconds,
+            )?;
             Ok(output
                 .is_finite()
                 .then(|| features::extract(&output))
                 .flatten())
         };
-        match render() {
+        match rendered() {
             Ok(Some(candidate)) => features::distance(&self.reference, &candidate),
             _ => SILENT,
         }
@@ -426,6 +535,8 @@ pub fn search(
             .collect(),
     );
     let features = features::extract(&reference).ok_or("the reference is silent")?;
+    let proposed = (args.start == Start::Learnt)
+        .then(|| learnt::Model::shipped().predict(&learnt::input(&features)));
     let seconds = (reference.channels.first().map_or(0, Vec::len) as f64 / reference.sample_rate)
         .clamp(0.25, MAX_SECONDS);
     let key = args
@@ -466,10 +577,17 @@ pub fn search(
         distances
     };
 
-    // Stage 1: random points over the whole space, a batch at a time; the
-    // best few are where the chains start.
+    // Stage 1: the learnt model's patch and random points over the whole
+    // space, a batch at a time; the best few are where the chains start. The
+    // model's patch counts toward the random share: it has to beat the random
+    // points to start a chain, so a reference unlike the model's training
+    // doesn't cost the search anything but one render.
     let explore = (budget / EXPLORE_SHARE).clamp(1, budget.saturating_sub(done).max(1));
     let mut starts: Vec<(f64, Vec<f64>)> = Vec::new();
+    if let Some(point) = proposed {
+        let distances = render(std::slice::from_ref(&point), &mut done);
+        starts.push((distances[0], point));
+    }
     while starts.len() < explore {
         let points: Vec<Vec<f64>> = (0..BATCH.min(explore - starts.len()))
             .map(|_| (0..space.len()).map(|_| rng.unit()).collect())
@@ -681,6 +799,7 @@ pub(crate) fn run(plugin: &mut Reagent, id: &str, args: &Value) -> Result<Value,
                 threads: std::thread::available_parallelism()
                     .ok()
                     .map(|cores| (usize::from(cores) / 2).max(1)),
+                start: Start::default(),
             };
             let shared = Arc::new(Shared {
                 cancel: AtomicBool::new(false),

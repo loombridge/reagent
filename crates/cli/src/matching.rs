@@ -12,7 +12,7 @@ use std::sync::atomic::AtomicBool;
 use clap::Parser;
 use lspk_plugin::Plugin;
 use lspk_test::render::Instance;
-use reagent_core::matching::{self, Args};
+use reagent_core::matching::{self, Args, Start};
 use reagent_core::{Reagent, preset};
 use reagent_engine::Registry;
 use serde_json::json;
@@ -45,6 +45,9 @@ pub struct MatchArgs {
     /// How many patches render at once; default one per core.
     #[arg(long)]
     pub threads: Option<usize>,
+    /// Search from random points only, without the learnt model's patch.
+    #[arg(long)]
+    pub random_start: bool,
 }
 
 /// Searches, writes the preset and prints the report.
@@ -61,6 +64,11 @@ pub fn run(args: &MatchArgs) -> Outcome {
             key: args.key,
             hold: args.hold,
             threads: args.threads,
+            start: if args.random_start {
+                Start::Random
+            } else {
+                Start::Learnt
+            },
         },
         &mut |_| {},
         &AtomicBool::new(false),

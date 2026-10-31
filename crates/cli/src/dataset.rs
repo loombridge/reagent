@@ -44,15 +44,15 @@ use crate::Outcome;
 /// The dataset format's version.
 const FORMAT: u32 = 1;
 /// The sample rate every patch renders at, in hertz.
-const RATE: f64 = 48_000.0;
+pub(crate) const RATE: f64 = 48_000.0;
 /// Frames per block.
 const BLOCK: usize = 512;
 /// The note every patch plays: MIDI key 48 at velocity 0.8, held for one
 /// second, in a render of one and a half.
-const KEY: u8 = 48;
+pub(crate) const KEY: u8 = 48;
 const VELOCITY: f32 = 0.8;
-const HOLD_SECONDS: f64 = 1.0;
-const RENDER_SECONDS: f64 = 1.5;
+pub(crate) const HOLD_SECONDS: f64 = 1.0;
+pub(crate) const RENDER_SECONDS: f64 = 1.5;
 /// Patches the sampler may draw for one index before it gives up.
 const MAX_ATTEMPTS: u32 = 64;
 

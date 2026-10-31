@@ -61,6 +61,22 @@ enum Command {
     /// Exits with status 1 if a file can't be read or written, or the
     /// reference is silent.
     Match(reagent_cli::matching::MatchArgs),
+    /// Train the model that proposes where `match` starts.
+    ///
+    /// Reads datasets `dataset` made, renders again the patches the search
+    /// can make for the features the model reads, fits a small network to
+    /// them and writes it to `--out`; `crates/core/src/match_model.bin` is
+    /// such a file. Exits with status 1 if a dataset can't be read or
+    /// holds no such patch.
+    TrainMatch(reagent_cli::match_model::TrainArgs),
+    /// Compare matching from the model's patch with matching from random points.
+    ///
+    /// Matches `--cases` patches of a dataset the model wasn't trained on,
+    /// each twice with the same budget and seed, and prints the distances
+    /// each search reached, and how many cases the model's patch got
+    /// nearer to, or to the random search's distance in fewer evaluations.
+    /// Exits with status 1 if the dataset can't be read.
+    CompareMatch(reagent_cli::match_model::CompareArgs),
     /// Build a patch from a description, or run the evaluation set.
     ///
     /// Picks the recipe for the instrument word (bass, lead, pad or pluck),
@@ -90,6 +106,8 @@ fn main() -> ExitCode {
         Command::Benchmark(args) => reagent_cli::benchmark::run(args),
         Command::Dataset(args) => reagent_cli::dataset::run(args),
         Command::Match(args) => reagent_cli::matching::run(args),
+        Command::TrainMatch(args) => reagent_cli::match_model::train(args),
+        Command::CompareMatch(args) => reagent_cli::match_model::compare(args),
         Command::TextToPatch(args) => reagent_cli::text_to_patch::run(args),
         Command::Mcp(args) => reagent_cli::mcp::run(args),
     };
