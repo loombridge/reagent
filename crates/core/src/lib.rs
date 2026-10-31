@@ -150,6 +150,9 @@ pub struct Reagent {
     telemetry: Telemetry,
     /// The engine's end, while no engine holds it.
     publisher: Option<Publisher<Frame>>,
+    /// What the interface named the command now running, for the undo
+    /// history to record the step under ([`Plugin::run_command_labelled`]).
+    undo_label: Option<String>,
 }
 
 impl std::fmt::Debug for Reagent {
@@ -293,6 +296,7 @@ impl Plugin for Reagent {
             history: History::new(preset::UNDO_PRESETS),
             telemetry: Arc::new(Mutex::new(watcher)),
             publisher: Some(publisher),
+            undo_label: None,
         }
     }
 
@@ -524,6 +528,18 @@ impl Plugin for Reagent {
             return preset::run(self, id, args);
         }
         Err(PluginError::new(format!("no command `{id}`")))
+    }
+
+    fn run_command_labelled(
+        &mut self,
+        id: &str,
+        args: &serde_json::Value,
+        undo_label: &str,
+    ) -> Result<serde_json::Value, PluginError> {
+        self.undo_label = Some(undo_label.to_owned());
+        let result = self.run_command(id, args);
+        self.undo_label = None;
+        result
     }
 }
 
