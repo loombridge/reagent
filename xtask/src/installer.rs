@@ -410,7 +410,7 @@ Description: {SUMMARY}
 }
 
 /// The spec copies the staged tree into the build root, and lists the
-/// top-level items: `DEBIAN`, which the stage also holds for the `.deb`,
+/// top-level items and the Loombridge folder: `DEBIAN`, which the stage also holds for the `.deb`,
 /// isn't one of them.
 fn rpm_spec(stage: &Path, arch: &str) -> String {
     let mut files = String::new();
@@ -421,7 +421,12 @@ fn rpm_spec(stage: &Path, arch: &str) -> String {
         let name = source.file_name().unwrap_or_default().to_string_lossy();
         writeln!(files, "/{to}/{name}").unwrap();
     }
-    writeln!(files, "/{}", places(Os::Linux).data).unwrap();
+    let data = places(Os::Linux).data;
+    writeln!(files, "/{data}").unwrap();
+    // The Loombridge folder above it, so that removing the package removes
+    // it too once it's empty, as dpkg does.
+    let vendor = Path::new(data).parent().unwrap_or(Path::new(""));
+    writeln!(files, "%dir /{}", vendor.display()).unwrap();
     format!(
         "%global debug_package %{{nil}}
 %global __os_install_post %{{nil}}
@@ -648,7 +653,8 @@ mod tests {
                 "/usr/lib/clap/reagent.clap",
                 "/usr/lib/vst3/reagent.vst3",
                 "/usr/bin/reagent",
-                "/usr/share/loombridge/reagent"
+                "/usr/share/loombridge/reagent",
+                "%dir /usr/share/loombridge"
             ]
         );
         assert!(spec.contains("cp -a /stage/. %{buildroot}/"));

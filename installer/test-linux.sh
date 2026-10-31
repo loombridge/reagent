@@ -40,4 +40,5 @@ case $kind in
   rpm) dnf remove -y -q reagent ;;
 esac
 each_path is_gone
+is_gone /usr/share/loombridge || failed=1
 exit "$failed"
