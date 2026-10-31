@@ -25,3 +25,11 @@ Four envelopes (`Env 1` is also the amplifier), ten LFOs (synced to the tempo by
 - For width, detune B and C a few cents either side of A with `Fine`, pan them apart, and lower each level so the sum doesn't clip.
 - Keep levels below full: three oscillators at 75 % with resonance can clip; preview and watch the peak.
 - `Quality` High (the default) runs the voices at twice the host's rate; Ultra is cleaner and costs twice as much again.
+
+## Working with the tools
+
+- `checkpoint` (`save`) before a big change, so `restore` puts the whole patch back as one step if it goes wrong.
+- Send related edits in one `run` batch: they land as one undo step, and if one fails nothing changes. Add `dry_run` to see what a batch would do first.
+- `query` after an edit reads the patch back, in prose in `summary`, so check that it says what you meant before you listen.
+- `preview` a note, a chord or a phrase after each change that you expect to be audible: it renders a separate copy of the patch and returns the audio and an analysis (pitch, loudness, spectrum, envelope, stereo width). Trust its numbers over your guess at what a setting sounds like.
+- Commands that read or write files (`preset.load`, `preset.save`) ask the person first, or are refused where there is no person to ask; use the patch commands instead.
