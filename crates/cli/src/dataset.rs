@@ -237,8 +237,12 @@ fn features(output: &Output) -> Option<Value> {
 }
 
 /// Patch `index` of `seed`: draws until a patch renders playable, and
-/// returns its record and its render.
-fn patch(seed: u64, index: usize, registry: &Registry) -> Result<(Value, Output), String> {
+/// returns it, the number of draws it took and its render.
+pub(crate) fn playable(
+    seed: u64,
+    index: usize,
+    registry: &Registry,
+) -> Result<(Patch, u32, Output), String> {
     let mut rng = Rng::for_patch(seed, index);
     for attempt in 1..=MAX_ATTEMPTS {
         let patch = sample(&mut rng);
@@ -246,29 +250,35 @@ fn patch(seed: u64, index: usize, registry: &Registry) -> Result<(Value, Output)
         instance.load_state(&patch.state(registry))?;
         instance.activate(Settings::new(RATE, BLOCK))?;
         let output = instance.render(&script()).output;
-        let Some(features) = features(&output) else {
-            continue;
-        };
-        let record = json!({
-            "index": index,
-            "attempts": attempt,
-            "params": patch.params.iter().map(|(id, value)| json!([id.0, value])).collect::<Vec<_>>(),
-            "routes": patch.routes.iter().map(|(source, target, amount, polarity)| {
-                let Target::Param(destination) = target else { unreachable!("the sampler routes to parameters") };
-                json!({
-                    "source": source,
-                    "destination": destination.0,
-                    "amount": amount,
-                    "polarity": match polarity { Polarity::Unipolar => "unipolar", Polarity::Bipolar => "bipolar" },
-                })
-            }).collect::<Vec<_>>(),
-            "features": features,
-        });
-        return Ok((record, output));
+        if features(&output).is_some() {
+            return Ok((patch, attempt, output));
+        }
     }
     Err(format!(
         "patch {index}: no playable patch in {MAX_ATTEMPTS} draws"
     ))
+}
+
+/// Patch `index` of `seed`: its record and its render.
+fn patch(seed: u64, index: usize, registry: &Registry) -> Result<(Value, Output), String> {
+    let (patch, attempt, output) = playable(seed, index, registry)?;
+    let features = features(&output).expect("a playable render has features");
+    let record = json!({
+        "index": index,
+        "attempts": attempt,
+        "params": patch.params.iter().map(|(id, value)| json!([id.0, value])).collect::<Vec<_>>(),
+        "routes": patch.routes.iter().map(|(source, target, amount, polarity)| {
+            let Target::Param(destination) = target else { unreachable!("the sampler routes to parameters") };
+            json!({
+                "source": source,
+                "destination": destination.0,
+                "amount": amount,
+                "polarity": match polarity { Polarity::Unipolar => "unipolar", Polarity::Bipolar => "bipolar" },
+            })
+        }).collect::<Vec<_>>(),
+        "features": features,
+    });
+    Ok((record, output))
 }
 
 /// The manifest `dataset.json` holds.
