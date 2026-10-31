@@ -1,0 +1,16 @@
+[
+  {"description": "A deep, dark bass.", "judge": {"pitch_hz": [55, 140], "brightness_oct": [-9, 1.5]}},
+  {"description": "A bright, snappy pluck.", "judge": {"brightness_oct": [1.6, 9], "duration_s": [0, 1.0]}},
+  {"description": "A wide, slow pad.", "judge": {"width": [0.25, 1], "attack_s": [0.3, 4]}},
+  {"description": "A dark, wide pad.", "judge": {"brightness_oct": [-9, 1.5], "width": [0.25, 1]}},
+  {"description": "A bright lead.", "judge": {"pitch_hz": [200, 340], "brightness_oct": [1.6, 9]}},
+  {"description": "A slow, dark lead.", "judge": {"attack_s": [0.3, 4], "brightness_oct": [-9, 1.5]}},
+  {"description": "A bright bass.", "judge": {"pitch_hz": [55, 140], "brightness_oct": [1.6, 9]}},
+  {"description": "A snappy, dark pluck.", "judge": {"duration_s": [0, 1.0], "brightness_oct": [-9, 1.5]}},
+  {"description": "A wide, bright lead.", "judge": {"width": [0.25, 1], "brightness_oct": [1.6, 9]}},
+  {"description": "A dark pad.", "judge": {"brightness_oct": [-9, 1.5], "level_db": [-40, -3]}},
+  {"description": "A dark, slow, wide pad.", "judge": {"brightness_oct": [-9, 1.5], "attack_s": [0.3, 4], "width": [0.25, 1]}},
+  {"description": "A snappy bass.", "judge": {"pitch_hz": [55, 140], "duration_s": [0, 1.0]}},
+  {"description": "A bright, slow pad.", "judge": {"brightness_oct": [1.6, 9], "attack_s": [0.3, 4]}},
+  {"description": "A wide, snappy pluck.", "judge": {"width": [0.25, 1], "duration_s": [0, 1.0], "pitch_hz": [200, 340]}}
+]

@@ -65,6 +65,7 @@ reagent-cli inspect --preset patch.json
 reagent-cli benchmark [--quick]
 reagent-cli dataset --out dir --count 1000 [--seed 0] [--audio] [--threads n]
 reagent-cli match --reference note.wav --out patch.json [--evaluations 600] [--seed 0] [--key 48] [--hold 1.0] [--threads n]
+reagent-cli text-to-patch ["a dark, wide pad"] [--out results.json]
 reagent-cli mcp [--autonomous]
 ```
 
@@ -73,6 +74,7 @@ reagent-cli mcp [--autonomous]
 - **benchmark** times the same suite `cargo xtask bench` runs and prints its table; build in release for numbers worth keeping.
 - **dataset** draws random, playable patches from a seed, renders each, and writes the patches with features measured on the renders, for training and for sound matching (below).
 - **match** searches for a patch that sounds like a recording and writes it as a preset (below).
+- **text-to-patch** builds a patch from a description by the loop an agent runs: a recipe for the instrument word (bass, lead, pad or pluck), then for each quality word (dark, bright, wide, slow, snappy) it renders a note, reads the perception features and moves one control until the reading fits, and last it sets the level. It prints the patch's parameters, each step and the final readings as JSON. With no description it runs the evaluation set (below) and exits `1` if a case fails its judge.
 - **mcp** serves the agent interface over standard input and output, for an agent client to start. It offers the same tools the plug-in offers inside a host: `list_commands`, `describe_command`, `run` (a batch is all or nothing, and `dry_run` checks without changing anything), `query` (every parameter by ID, name or path, with a summary of the signal path), `checkpoint`, `preview` (renders a note, chord or phrase and returns the audio with an analysis) and the guides. Destructive and external commands, such as saving and loading preset files, are refused with the reason unless `--autonomous` is given. It exits `0` when standard input ends.
 
 ## Datasets
@@ -97,6 +99,12 @@ Throughput on an Apple M1 Pro (10 cores), release build, 1,000 patches of seed 1
 - **What a match recovers.** Features are coarser than parameters, so the patch it finds sounds like the recording and may be set differently: the unison count against the detune, or the filter type against its resonance, can trade off. For patches Reagent rendered itself (one oscillator through the filter, 1 s, 600 candidates, the six references of `the_search_recovers_the_parameters_of_patches_reagent_rendered`, run with `cargo nextest run --release`), the match renders to within 40 % of the Init patch's distance from the reference, plays the same octave and has the same release to within 15 %. That test is skipped in a debug build, where rendering is thirty times slower.
 
 Time to a result, on an Apple M5 Max (18 cores, shared with other jobs), release build: the six searches of the test above take 11 s in all, about 1.8 s each; `reagent-cli match` on a 1.5 s dataset render takes 3.7 s for 600 candidates and 22 s for 3,000.
+
+## Text to patch
+
+The recipes are in the guide resource, under "Sound-design recipes", for a model to follow through the agent interface. `reagent-cli text-to-patch` is a scripted agent that follows the same loop, so the loop and the judging can run without a model.
+
+The evaluation set is `crates/cli/src/eval.json`: written descriptions, each with a judge, a range for each reading of the result's perception features (`brightness_oct`, `attack_s`, `width`, `pitch_hz`, `level_db`, `duration_s`). The judges don't know the loop's goals, so a model's patches are judged the same way. The latest run is recorded in [`evidence/text-to-patch/results.json`](evidence/text-to-patch/results.json), and a test checks that a fresh run passes and fails the same cases.
 
 ## Matching a reference
 
