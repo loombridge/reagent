@@ -52,6 +52,16 @@ enum Command {
     /// the renders. The same seed and count make the same folder. Exits with
     /// status 1 if a file can't be written or no playable patch turns up.
     Dataset(reagent_cli::dataset::DatasetArgs),
+    /// Build a patch from a description, or run the evaluation set.
+    ///
+    /// Picks the recipe for the instrument word (bass, lead, pad or pluck),
+    /// then renders a note, reads the perception features and adjusts one
+    /// control for each quality word (dark, bright, wide, slow, snappy)
+    /// until the reading fits. With no description, runs the written
+    /// evaluation set and judges each result. Exits with status 1 if a
+    /// description has no instrument word, a file can't be written or an
+    /// evaluation case fails its judge.
+    TextToPatch(reagent_cli::text_to_patch::TextToPatchArgs),
     /// Serve the agent interface over standard input and output.
     ///
     /// An agent client starts this and speaks MCP on its standard input and
@@ -70,6 +80,7 @@ fn main() -> ExitCode {
         Command::Inspect(args) => reagent_cli::inspect::run(args),
         Command::Benchmark(args) => reagent_cli::benchmark::run(args),
         Command::Dataset(args) => reagent_cli::dataset::run(args),
+        Command::TextToPatch(args) => reagent_cli::text_to_patch::run(args),
         Command::Mcp(args) => reagent_cli::mcp::run(args),
     };
     match outcome {
