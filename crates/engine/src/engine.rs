@@ -80,6 +80,7 @@ use crate::params::{
 use crate::patch::{CHANNELS, ChannelState, FilterState, Patch, PatchReceiver};
 use crate::routing::{self, BusOutput, ChannelOutput, FilterOutput, balance_shares, pan_gains};
 use crate::stepping::{Stepper, Stepping};
+use crate::telemetry::{self, Frame, Publisher};
 use crate::tuning::{Control, Tuner};
 
 /// The most voices (engine-core R117).
@@ -475,6 +476,8 @@ pub struct Engine {
     oversamplers: [Oversampler; 3],
     max_frames: usize,
     quiet: usize,
+    /// Where the interface's live values go, once an editor can watch.
+    telemetry: Option<telemetry::State>,
     /// The tuning's other reader: it drops the notes a tuning leaves out
     /// before the voices see them.
     tuner: Tuner,
@@ -719,6 +722,7 @@ impl Engine {
             oversamplers,
             max_frames,
             quiet: SETTLE_FRAMES,
+            telemetry: None,
             tuner: Tuner::new(Control::new(), None),
             stepper: Stepper::new(Stepping::new()),
         }
@@ -741,6 +745,19 @@ impl Engine {
     /// its own program when a host's automation changes what is in use.
     pub fn attach_patches(&mut self, patches: PatchReceiver) {
         self.synth.patch_mailbox = Some(patches);
+    }
+
+    /// Publishes the interface's live values through `publisher`, while its
+    /// watcher says an editor is open; otherwise it costs one atomic load
+    /// per block. Allocates, so call it off the audio thread.
+    pub fn attach_telemetry(&mut self, publisher: Publisher<Frame>) {
+        self.telemetry = Some(telemetry::State::new(publisher, self.max_frames));
+    }
+
+    /// Takes the publisher back, as the plug-in does when it deactivates, to
+    /// hand it to the next engine.
+    pub fn take_telemetry(&mut self) -> Option<Publisher<Frame>> {
+        self.telemetry.take().map(|t| t.publisher)
     }
 
     /// Tunes notes by `tuner`'s sources, as the plug-in does at activation.
@@ -791,6 +808,9 @@ impl Engine {
             oversampler.decimate(c, high, &mut out[..frames]);
         }
         self.report(cx, frames);
+        let sleeping =
+            self.voices.block().active_count() == 0 && self.quiet + frames >= SETTLE_FRAMES;
+        self.publish_telemetry(audio, frames, sleeping);
         if self.synth.factor != factor {
             // The quality changed in this block: the new rate's way down
             // starts clean.
@@ -808,6 +828,77 @@ impl Engine {
                 ProcessStatus::Continue
             }
         }
+    }
+
+    /// Takes the block's output for the scope, the spectrum and the meters,
+    /// and publishes a frame when one is due, or when the engine is about to
+    /// sleep, so the interface shows the silence it fell into.
+    fn publish_telemetry(&mut self, audio: &Buffers<'_>, frames: usize, sleeping: bool) {
+        let Some(t) = self.telemetry.as_mut() else {
+            return;
+        };
+        if !t.publisher.watched() {
+            return;
+        }
+        let metered = audio.channels().min(telemetry::METERED);
+        let mono = &mut t.mono[..frames];
+        mono.fill(0.0);
+        for c in 0..metered {
+            for (m, &s) in mono.iter_mut().zip(audio.channel(c)) {
+                *m += s / metered as f32;
+                t.peaks[c] = t.peaks[c].max(s.abs());
+            }
+        }
+        t.analyser.push(mono);
+        if !t.publisher.due(frames) && !sleeping {
+            return;
+        }
+        let (synth, voices) = (&self.synth, &self.voices);
+        t.publisher.publish(|frame| {
+            debug_assert_eq!(frame.layout, telemetry::layout(&synth.registry));
+            frame.clock = synth.clock;
+            frame.set_modulated(&synth.modeng);
+            frame.active.fill(false);
+            for v in voices.block().active_voices() {
+                frame.active[v] = true;
+            }
+            let osc = &synth.units[0][synth.copies[0] - 1].osc;
+            for (v, phase) in frame.voice_phase.iter_mut().enumerate() {
+                *phase =
+                    (f64::from(osc.phase(osc.lanes_of(v).start)) / lspk_wavetable::CYCLE) as f32;
+            }
+            for (l, phases) in frame
+                .lfo_phase
+                .as_chunks_mut::<MAX_VOICES>()
+                .0
+                .iter_mut()
+                .enumerate()
+            {
+                for (v, phase) in phases.iter_mut().enumerate() {
+                    // An LFO nothing reads isn't running.
+                    *phase = if synth.needed & (1 << l) != 0 {
+                        synth.lfos[l].phase(v, &synth.transport)
+                    } else {
+                        0.0
+                    };
+                }
+            }
+            for (e, stages) in frame
+                .env_stage
+                .as_chunks_mut::<MAX_VOICES>()
+                .0
+                .iter_mut()
+                .enumerate()
+            {
+                for (v, stage) in stages.iter_mut().enumerate() {
+                    *stage = synth.envs[e].stage(v);
+                }
+            }
+            frame.levels[..telemetry::METERED].copy_from_slice(&t.peaks);
+            t.analyser.scope(&mut frame.scope);
+            t.analyser.spectrum(&mut frame.spectrum);
+        });
+        t.peaks = [0.0; telemetry::METERED];
     }
 
     /// Reports the block's note ends and routing resets to the host, in

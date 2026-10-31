@@ -52,6 +52,8 @@ lspk-standalone = { workspace = true, optional = true }
 [dev-dependencies]
 lspk-agent.workspace = true
 lspk-commands.workspace = true
+# The envelope stage a published frame names.
+lspk-dsp.workspace = true
 lspk-mod.workspace = true
 lspk-presets.workspace = true
 lspk-rt.workspace = true
