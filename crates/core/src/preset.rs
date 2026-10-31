@@ -33,7 +33,10 @@
 //! The commands are `preset.save` and `preset.load` (files outside the
 //! project, so agents ask the person first), `preset.store_a` and
 //! `preset.store_b` with `preset.compare` for A/B, and `preset.undo` and
-//! `preset.redo` for the changes preset commands made.
+//! `preset.redo` for the changes preset commands made. Each change is kept
+//! under a label: the name the interface ran its command under, or the
+//! command's own label, which `preset.undo` and `preset.redo` say they took
+//! back or made again.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -58,6 +61,11 @@ pub const FORMAT: &str = "reagent-preset";
 
 /// The engine name a slot's wavetable state sits under.
 pub const WAVETABLE: &str = "wavetable";
+
+/// The label of `preset.load`, which is also the undo step's by default.
+const LOAD_LABEL: &str = "Load Preset";
+/// The label of `preset.compare`, which is also the undo step's by default.
+const COMPARE_LABEL: &str = "Compare A and B";
 
 /// How many preset changes the undo history keeps.
 pub const UNDO_PRESETS: usize = 64;
@@ -367,6 +375,12 @@ impl Reagent {
         Ok(())
     }
 
+    /// The label a change the running command makes is kept under: the one
+    /// the interface gave it, else `default`.
+    fn step_label(&mut self, default: &str) -> String {
+        self.undo_label.take().unwrap_or_else(|| default.to_owned())
+    }
+
     /// `preset.save`: writes the patch to `path`.
     fn save_preset(&mut self, path: &str) -> Result<PresetResult, PluginError> {
         write(Path::new(path), self.values()?, &self.state())?;
@@ -381,7 +395,8 @@ impl Reagent {
     fn load_preset(&mut self, path: &str) -> Result<PresetResult, PluginError> {
         let before = self.patch()?;
         let preset = read(Path::new(path), self.values()?, &self.registry)?;
-        self.history.record(before);
+        let label = self.step_label(LOAD_LABEL);
+        self.history.record(before, label);
         self.apply_preset(&preset)?;
         self.preset_path = Some(PathBuf::from(path));
         Ok(PresetResult {
@@ -442,7 +457,8 @@ impl Reagent {
             });
         };
         let before = self.patch()?;
-        self.history.record(before);
+        let label = self.step_label(COMPARE_LABEL);
+        self.history.record(before, label);
         self.apply_preset(&other)?;
         Ok(CompareResult {
             showing: self.compare.showing().key().to_owned(),
@@ -454,22 +470,36 @@ impl Reagent {
     /// change.
     fn undo_preset(&mut self) -> Result<UndoResult, PluginError> {
         let current = self.patch()?;
+        let label = self.history.undo_label().map(str::to_owned);
         let Some(past) = self.history.undo(&current) else {
-            return Ok(UndoResult { restored: false });
+            return Ok(UndoResult {
+                restored: false,
+                label: None,
+            });
         };
         self.apply_preset(&past)?;
-        Ok(UndoResult { restored: true })
+        Ok(UndoResult {
+            restored: true,
+            label,
+        })
     }
 
     /// `preset.redo`: puts the patch back the way the last undo turned it
     /// away from.
     fn redo_preset(&mut self) -> Result<UndoResult, PluginError> {
         let current = self.patch()?;
+        let label = self.history.redo_label().map(str::to_owned);
         let Some(forward) = self.history.redo(&current) else {
-            return Ok(UndoResult { restored: false });
+            return Ok(UndoResult {
+                restored: false,
+                label: None,
+            });
         };
         self.apply_preset(&forward)?;
-        Ok(UndoResult { restored: true })
+        Ok(UndoResult {
+            restored: true,
+            label,
+        })
     }
 }
 
@@ -516,6 +546,10 @@ pub struct CompareResult {
 pub struct UndoResult {
     /// Whether a patch was put back.
     pub restored: bool,
+    /// The label of the change it took back (`preset.undo`) or made again
+    /// (`preset.redo`), when a patch was put back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// Adds Reagent's preset commands to `registry`.
@@ -537,7 +571,7 @@ pub fn register(registry: &mut Commands) -> Result<(), RegisterError> {
             .result::<PresetResult>(),
     )?;
     registry.register(
-        CommandSpec::new(LOAD, "Load Preset")
+        CommandSpec::new(LOAD, LOAD_LABEL)
             .description(
                 "Reads the preset file at `path` and applies it: every parameter the preset \
                  doesn't name goes back to its default, the matrix and the oscillators' state \
@@ -573,7 +607,7 @@ pub fn register(registry: &mut Commands) -> Result<(), RegisterError> {
             .result::<StoreResult>(),
     )?;
     registry.register(
-        CommandSpec::new(COMPARE, "Compare A and B")
+        CommandSpec::new(COMPARE, COMPARE_LABEL)
             .description(
                 "Keeps the patch now on the side showing and applies the patch kept on the other \
                  side, switching A/B compare to it. With nothing kept on the other side it \
@@ -589,7 +623,8 @@ pub fn register(registry: &mut Commands) -> Result<(), RegisterError> {
         CommandSpec::new(UNDO, "Undo Preset Change")
             .description(
                 "Puts the patch back as it was before the last `preset.load` or `preset.compare`, \
-                 and says whether there was one. It leaves the two sides of A/B compare alone.",
+                 and says whether there was one and which change it took back. It leaves the two \
+                 sides of A/B compare alone.",
             )
             .permission(Permission::Edit)
             .context(Context::Global)
@@ -613,7 +648,7 @@ pub fn register(registry: &mut Commands) -> Result<(), RegisterError> {
         CommandSpec::new(REDO, "Redo Preset Change")
             .description(
                 "Puts the patch back the way the last `preset.undo` turned it away from, and says \
-                 whether there was one.",
+                 whether there was one and which change it made again.",
             )
             .permission(Permission::Edit)
             .context(Context::Global)
