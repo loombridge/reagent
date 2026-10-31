@@ -2482,6 +2482,20 @@ name = "reagent-import"
 version = "0.0.0"
 
 [[package]]
+name = "reagent-match"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "lspk-params",
+ "lspk-rt",
+ "lspk-test",
+ "reagent-core",
+ "reagent-engine",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "reagent-ui"
 version = "0.0.0"
 dependencies = [

@@ -15,6 +15,7 @@ const REPO: Repo = Repo {
         "reagent-import",
         "reagent-core",
         "reagent-cli",
+        "reagent-match",
     ],
     downstream: no_crate,
     ..Repo::plugin(&["reagent"], lspk_xtask::REJECTS_AGPL)

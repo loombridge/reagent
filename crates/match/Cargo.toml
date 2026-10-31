@@ -1,0 +1,24 @@
+[package]
+name = "reagent-match"
+description = "The matching harness: renders pairs of single-change cases beside a reference instrument and fits curves and levels from them."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+reagent-core.workspace = true
+reagent-engine.workspace = true
+# The render harness, the measurements and the WAV reader and writer.
+lspk-test = { workspace = true, default-features = false }
+lspk-params.workspace = true
+# The allocation trap, installed by a debug build as the other tools do.
+lspk-rt.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+
+[lints]
+workspace = true

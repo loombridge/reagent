@@ -18,6 +18,7 @@ reagent-import = { path = "crates/import" }
 reagent-ui = { path = "crates/ui" }
 reagent = { path = "crates/plugin" }
 reagent-cli = { path = "crates/cli" }
+reagent-match = { path = "crates/match" }
 
 # The plug-in kit, by git revision until its API settles. Every kit crate
 # comes from the same revision; to work on the kit and Reagent at once, patch
