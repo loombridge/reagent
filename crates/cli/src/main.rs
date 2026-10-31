@@ -44,6 +44,14 @@ enum Command {
     /// release for numbers worth keeping. Exits with status 1 if a
     /// scenario's plug-in can't be made or given its state.
     Benchmark(reagent_cli::benchmark::BenchmarkArgs),
+    /// Render a dataset of random, playable patches and measure each.
+    ///
+    /// Draws `--count` patches from `--seed`, plays each through the engine
+    /// on every core, and writes a folder: `dataset.json`, `patches.jsonl`
+    /// (each patch's parameters, routes and features) and, with `--audio`,
+    /// the renders. The same seed and count make the same folder. Exits with
+    /// status 1 if a file can't be written or no playable patch turns up.
+    Dataset(reagent_cli::dataset::DatasetArgs),
     /// Serve the agent interface over standard input and output.
     ///
     /// An agent client starts this and speaks MCP on its standard input and
@@ -61,6 +69,7 @@ fn main() -> ExitCode {
         Command::Render(args) => reagent_cli::render::run(args),
         Command::Inspect(args) => reagent_cli::inspect::run(args),
         Command::Benchmark(args) => reagent_cli::benchmark::run(args),
+        Command::Dataset(args) => reagent_cli::dataset::run(args),
         Command::Mcp(args) => reagent_cli::mcp::run(args),
     };
     match outcome {

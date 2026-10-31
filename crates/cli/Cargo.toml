@@ -19,6 +19,8 @@ lspk-test = { workspace = true, default-features = false }
 lspk-presets.workspace = true
 # The parameter space, for each value's name, unit and choice.
 lspk-params.workspace = true
+# Modulation routes, for the patches `dataset` draws.
+lspk-mod.workspace = true
 # Scripted notes and parameter events the render harness plays.
 lspk-plugin.workspace = true
 # The allocation trap, installed by a debug build as Beatlayer's CLI does.

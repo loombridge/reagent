@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use lspk_plugin::Plugin;
 use lspk_test::render::Instance;
+use reagent_cli::dataset::{self, DatasetArgs};
 use reagent_cli::inspect;
 use reagent_cli::render::{self, Phrase, RenderArgs};
 use reagent_core::Reagent;
@@ -82,6 +83,58 @@ fn a_render_writes_a_wav_that_reads_back_as_the_same_audio() {
     let read = lspk_test::agent::decode_wav(&bytes).expect("a WAV file");
     let rendered = render::render(&args).expect("a render");
     assert!(rendered.same_bits(&read));
+}
+
+/// A dataset of `count` patches from `seed`, with audio, in a folder named
+/// `name` rendered by `threads` threads.
+fn dataset_in(name: &str, seed: u64, count: usize, threads: usize) -> PathBuf {
+    let out = temporary(name);
+    let args = DatasetArgs {
+        out: out.clone(),
+        count,
+        seed,
+        audio: true,
+        threads: Some(threads),
+    };
+    dataset::run(&args).expect("a dataset");
+    out
+}
+
+#[test]
+fn a_dataset_repeats_from_its_seed_whatever_the_thread_count() {
+    let one = dataset_in("dataset-one", 7, 6, 1);
+    let three = dataset_in("dataset-three", 7, 6, 3);
+    let other = dataset_in("dataset-other", 8, 6, 2);
+    for file in ["dataset.json", "patches.jsonl", "audio/00000005.wav"] {
+        let read = |dir: &Path| fs::read(dir.join(file)).expect("a dataset file");
+        assert_eq!(read(&one), read(&three), "{file}");
+    }
+    let lines = |dir: &Path| fs::read_to_string(dir.join("patches.jsonl")).expect("patches");
+    assert_ne!(lines(&one), lines(&other));
+}
+
+#[test]
+fn every_patch_in_a_dataset_is_playable_and_its_features_match_its_render() {
+    let dir = dataset_in("dataset-features", 3, 6, 2);
+    let text = fs::read_to_string(dir.join("patches.jsonl")).expect("patches");
+    let records: Vec<serde_json::Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a JSON record"))
+        .collect();
+    assert_eq!(records.len(), 6);
+    for (index, record) in records.iter().enumerate() {
+        assert_eq!(record["index"], index);
+        let features = &record["features"];
+        let (peak, rms) = (
+            features["peak_db"].as_f64().expect("a peak"),
+            features["rms_db"].as_f64().expect("a level"),
+        );
+        assert!(peak <= 0.0 && rms >= -50.0, "patch {index}: {peak}, {rms}");
+        let wav = fs::read(dir.join(format!("audio/{index:08}.wav"))).expect("a render");
+        let output = lspk_test::agent::decode_wav(&wav).expect("a WAV file");
+        let measured = lspk_test::measure::db(lspk_test::measure::peak(&output.mono()));
+        assert!((measured - peak).abs() < 1e-9, "patch {index}");
+    }
 }
 
 #[test]

@@ -63,13 +63,27 @@ Reagent depends on the plug-in kit by git revision. To work on both at once, see
 reagent-cli render --preset patch.json --out out.wav [--phrase chord|run] [--midi file.mid] [--rate 48000] [--block 512]
 reagent-cli inspect --preset patch.json
 reagent-cli benchmark [--quick]
+reagent-cli dataset --out dir --count 1000 [--seed 0] [--audio] [--threads n]
 reagent-cli mcp [--autonomous]
 ```
 
 - **render** plays a preset through the same engine code a host runs, faster than real time, and writes a 32-bit float WAV. The same preset and phrase render to the same samples every time and at any block size. `--midi` plays a Standard MIDI File instead of a built-in phrase. A debug build fails if the engine touches the heap inside a block.
 - **inspect** reads a preset with the plug-in kit's preset reader and prints its schema version, the modules it sets, each non-default value in its real unit and its choice by name, and the wavetables its oscillators name.
 - **benchmark** times the same suite `cargo xtask bench` runs and prints its table; build in release for numbers worth keeping.
+- **dataset** draws random, playable patches from a seed, renders each, and writes the patches with features measured on the renders, for training and for sound matching (below).
 - **mcp** serves the agent interface over standard input and output, for an agent client to start. It offers the same tools the plug-in offers inside a host: `list_commands`, `describe_command`, `run` (a batch is all or nothing, and `dry_run` checks without changing anything), `query` (every parameter by ID, name or path, with a summary of the signal path), `checkpoint`, `preview` (renders a note, chord or phrase and returns the audio with an analysis) and the guides. Destructive and external commands, such as saving and loading preset files, are refused with the reason unless `--autonomous` is given. It exits `0` when standard input ends.
+
+## Datasets
+
+`reagent-cli dataset` makes a folder from a seed and a count. Patch `i` is drawn from the seed and `i` alone, so the same seed and count make the same folder byte for byte, on any number of threads.
+
+- The sampler draws what a player would: oscillator A always sounds, through Filter 1 or straight to Main; oscillator B, the sub, the noise, a modulation envelope on the cutoff and an LFO come and go; levels, times, cutoffs and resonance stay in playing ranges. A patch is kept only if its render is finite, no quieter than −50 dBFS RMS and no louder than 0 dBFS; `attempts` says how many draws that took.
+- Every patch plays MIDI key 48 at velocity 0.8, held for 1 s, in a render of 1.5 s at 48 kHz.
+- `dataset.json` holds the format version (1), the seed, the count, the sample rate, the note and what each feature means.
+- `patches.jsonl` holds one JSON object per line, in index order: `index`, `attempts`, `params` (each parameter the patch sets as `[id, value]`, the value in real units; every other parameter is at its default), `routes` (`source` key, `destination` parameter ID, `amount`, `polarity`) and `features`: `peak_db`, `rms_db`, `centroid_hz`, `pitch_hz`, `onset_s`, `attack_end_s` and `decay_end_s`.
+- With `--audio`, `audio/<index>.wav` holds each render, the index in eight digits (`audio/00000042.wav`), as a 32-bit float WAV (about 0.55 MB each).
+
+Throughput on an Apple M1 Pro (10 cores), release build, 1,000 patches of seed 1, no audio files: 7,300 patches a minute on 10 threads, and 1,400 a minute on one. With `--audio` on 3 threads it writes 3,800 a minute.
 
 ## Matching a reference
 
