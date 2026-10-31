@@ -19,6 +19,7 @@ Reagent isn't affiliated with or endorsed by Xfer Records. Serum is a trademark 
 | `reagent-core` | The plug-in without a format export or an editor: its parameters, presets and hand-built patches, headless |
 | `reagent` | The plug-in (CLAP, VST3 and Audio Unit v2) and the standalone app, with the editor and the agent interface, made from `reagent-core` |
 | `reagent-cli` | Headless: render, inspect, convert, benchmark, and the agent interface over stdio |
+| `reagent-match` | The matching harness: sweeps a parameter beside a reference instrument and fits the curves and levels |
 
 ## Develop
 
@@ -69,6 +70,16 @@ reagent-cli mcp [--autonomous]
 - **inspect** reads a preset with the plug-in kit's preset reader and prints its schema version, the modules it sets, each non-default value in its real unit and its choice by name, and the wavetables its oscillators name.
 - **benchmark** times the same suite `cargo xtask bench` runs and prints its table; build in release for numbers worth keeping.
 - **mcp** serves the agent interface over standard input and output, for an agent client to start. It offers the same tools the plug-in offers inside a host: `list_commands`, `describe_command`, `run` (a batch is all or nothing, and `dry_run` checks without changing anything), `query` (every parameter by ID, name or path, with a summary of the signal path), `checkpoint`, `preview` (renders a note, chord or phrase and returns the audio with an analysis) and the guides. Destructive and external commands, such as saving and loading preset files, are refused with the reason unless `--autonomous` is given. It exits `0` when standard input ends.
+
+## Matching a reference
+
+`reagent-match` sweeps one parameter on a reference instrument and on Reagent, and prints the pairs, the law each curve follows (linear, power, logarithmic or exponential, with its constants) and the level between them, as JSON.
+
+```sh
+reagent-match sweep --param "Osc A Level" --values 25,50,75,100 [--metric rms|pitch|centroid] [--key 60] --scratch DIR -- <command>
+```
+
+The reference is the command after `--`. For each value it's run as `<command> <case.json> <out.wav>`: it plays the case, one note on the reference's initial patch with the named parameters changed (`{"changes": [{"param", "value"}], "key", "velocity", "seconds", "rate"}`), and writes the audio to the WAV file. A command that hosts a real instrument headlessly is the maintainer's to write and keep; `reagent-match standin <case.json> <out.wav>` is Reagent in that role, which is how CI tests the harness without one. Renders are written only under `--scratch`, which must be outside any repository, and are deleted once measured.
 
 ## Licence
 

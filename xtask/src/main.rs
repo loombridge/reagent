@@ -1,7 +1,8 @@
 //! Reagent's `cargo xtask`: the plug-in kit's tasks, run in this repository.
-//! Run `cargo xtask help` for the list.
+//! Run `cargo xtask help` for the list; `reagent-parity` is Reagent's own.
 
 mod installer;
+mod parity;
 
 use lspk_xtask::Repo;
 
@@ -17,6 +18,7 @@ const REPO: Repo = Repo {
         "reagent-import",
         "reagent-core",
         "reagent-cli",
+        "reagent-match",
     ],
     downstream: no_crate,
     ..Repo::plugin(&["reagent"], lspk_xtask::REJECTS_AGPL)
@@ -36,6 +38,15 @@ const INSTALLER_USAGE: &str = "\
 
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|task| task == "reagent-parity") {
+        return match parity::run(&args[1..]) {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(message) => {
+                eprintln!("error: {message}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
     match args.first().map(String::as_str) {
         Some("installer") if args.len() == 1 => {
             // xtask sits directly under the workspace root.

@@ -33,30 +33,39 @@
 //! The commands are `preset.save` and `preset.load` (files outside the
 //! project, so agents ask the person first), `preset.store_a` and
 //! `preset.store_b` with `preset.compare` for A/B, and `preset.undo` and
-//! `preset.redo` for the changes preset commands made.
+//! `preset.redo` for the changes preset commands made. Each change is kept
+//! under a label: the name the interface ran its command under, or the
+//! command's own label, which `preset.undo` and `preset.redo` say they took
+//! back or made again.
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use lspk_commands::{CommandSpec, Context, Permission, RegisterError, Registry as Commands};
 use lspk_mod::{Destinations, Matrix, Sources};
 use lspk_plugin::{ParamValues, PluginError};
 use lspk_presets::{Preset, Side};
 use reagent_engine::modulation::SavedMatrix;
-use reagent_engine::params::{OSC_NAMES, OSCILLATORS};
+use reagent_engine::params::{OSC_NAMES, OSCILLATORS, global};
 use reagent_engine::{Registry, table};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::Reagent;
+use crate::tuning::TuningFile;
 
 /// The `format` field every Reagent preset starts with.
 pub const FORMAT: &str = "reagent-preset";
 
 /// The engine name a slot's wavetable state sits under.
 pub const WAVETABLE: &str = "wavetable";
+
+/// The label of `preset.load`, which is also the undo step's by default.
+const LOAD_LABEL: &str = "Load Preset";
+/// The label of `preset.compare`, which is also the undo step's by default.
+const COMPARE_LABEL: &str = "Compare A and B";
 
 /// How many preset changes the undo history keeps.
 pub const UNDO_PRESETS: usize = 64;
@@ -75,6 +84,8 @@ pub const COMPARE: &str = "preset.compare";
 pub const UNDO: &str = "preset.undo";
 /// `preset.redo`: put the patch back the way undo turned it away from.
 pub const REDO: &str = "preset.redo";
+/// `preset.step`: load the next or previous preset in the folder.
+pub const STEP: &str = "preset.step";
 
 /// The wavetable engine's own state: which table a slot plays.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -126,6 +137,9 @@ pub struct State {
     /// slots are new ones.
     #[serde(default)]
     pub oscillators: Vec<SlotState>,
+    /// The tuning file the patch was made with, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tuning: Option<TuningFile>,
 }
 
 impl State {
@@ -135,6 +149,7 @@ impl State {
         Self {
             matrix: SavedMatrix::of(matrix, sources),
             oscillators: slots.to_vec(),
+            tuning: None,
         }
     }
 
@@ -212,8 +227,11 @@ pub fn decode(
     let (matrix, slots) = state
         .load(&registry.sources, &registry.destinations)
         .map_err(PluginError::new)?;
-    let state = serde_json::to_value(State::of(&matrix, &registry.sources, &slots))
-        .map_err(|error| PluginError::new(error.to_string()))?;
+    let state = serde_json::to_value(State {
+        tuning: state.tuning,
+        ..State::of(&matrix, &registry.sources, &slots)
+    })
+    .map_err(|error| PluginError::new(error.to_string()))?;
     Ok(Preset {
         values: preset.values,
         state,
@@ -286,6 +304,14 @@ impl Reagent {
             .ok_or_else(|| PluginError::new("the parameter values aren't connected"))
     }
 
+    /// Reagent's own state as a preset holds it now.
+    fn state(&self) -> State {
+        State {
+            tuning: self.tuning.file.clone(),
+            ..State::of(&self.matrix, &self.registry.sources, &self.slots)
+        }
+    }
+
     /// The patch now as a preset: every value that differs from its
     /// default, the matrix, and each oscillator slot's engines' state.
     ///
@@ -293,16 +319,16 @@ impl Reagent {
     ///
     /// The parameter values aren't connected.
     fn patch(&self) -> Result<Preset, PluginError> {
-        let state =
-            serde_json::to_value(State::of(&self.matrix, &self.registry.sources, &self.slots))
-                .map_err(|error| PluginError::new(error.to_string()))?;
+        let state = serde_json::to_value(self.state())
+            .map_err(|error| PluginError::new(error.to_string()))?;
         Ok(Preset::of(self.values()?, state))
     }
 
     /// Applies `preset` to the patch: every parameter the preset doesn't
     /// name goes back to its default, as an edit the host records, and the
     /// matrix and the oscillators' state follow. A locked matrix stays as
-    /// it is.
+    /// it is, and so do the tuning file and Reference pitch while the tuning
+    /// is locked.
     ///
     /// # Errors
     ///
@@ -312,6 +338,9 @@ impl Reagent {
             let values = self.values()?;
             let mut edits = Vec::new();
             for descriptor in values.descriptors() {
+                if self.tuning.locked && descriptor.id == global::REFERENCE_PITCH {
+                    continue;
+                }
                 let target = preset.value(descriptor.id).unwrap_or(descriptor.default);
                 if values.get(descriptor.id) != Some(target) {
                     edits.push((descriptor.id, target));
@@ -330,6 +359,14 @@ impl Reagent {
         let (matrix, slots) = state
             .load(&self.registry.sources, &self.registry.destinations)
             .map_err(PluginError::new)?;
+        if !self.tuning.locked {
+            // A tuning file that isn't on this machine leaves the preset
+            // loading in equal temperament, its path kept for the next save.
+            let file = state.tuning;
+            let table = file.as_ref().and_then(|f| f.read().ok());
+            self.control.set_file(table.as_ref());
+            self.tuning.file = file;
+        }
         self.matrix.load(&matrix);
         self.slots = slots;
         self.send_matrix();
@@ -338,10 +375,16 @@ impl Reagent {
         Ok(())
     }
 
+    /// The label a change the running command makes is kept under: the one
+    /// the interface gave it, else `default`.
+    fn step_label(&mut self, default: &str) -> String {
+        self.undo_label.take().unwrap_or_else(|| default.to_owned())
+    }
+
     /// `preset.save`: writes the patch to `path`.
-    fn save_preset(&self, path: &str) -> Result<PresetResult, PluginError> {
-        let state = State::of(&self.matrix, &self.registry.sources, &self.slots);
-        write(Path::new(path), self.values()?, &state)?;
+    fn save_preset(&mut self, path: &str) -> Result<PresetResult, PluginError> {
+        write(Path::new(path), self.values()?, &self.state())?;
+        self.preset_path = Some(PathBuf::from(path));
         Ok(PresetResult {
             path: path.to_owned(),
         })
@@ -352,11 +395,43 @@ impl Reagent {
     fn load_preset(&mut self, path: &str) -> Result<PresetResult, PluginError> {
         let before = self.patch()?;
         let preset = read(Path::new(path), self.values()?, &self.registry)?;
-        self.history.record(before);
+        let label = self.step_label(LOAD_LABEL);
+        self.history.record(before, label);
         self.apply_preset(&preset)?;
+        self.preset_path = Some(PathBuf::from(path));
         Ok(PresetResult {
             path: path.to_owned(),
         })
+    }
+
+    /// `preset.step`: loads the preset `steps` places on from the one last
+    /// loaded or saved, among the files beside it with the same extension in
+    /// name order, wrapping round at either end.
+    pub(crate) fn step_preset(&mut self, steps: i32) -> Result<PresetResult, PluginError> {
+        let io = |error: std::io::Error| PluginError::new(error.to_string());
+        let current = self.preset_path.clone().ok_or_else(|| {
+            PluginError::new(
+                "no preset has been loaded or saved, so there is no folder to step through",
+            )
+        })?;
+        let folder = current.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let mut files = Vec::new();
+        for entry in fs::read_dir(&folder).map_err(io)? {
+            let path = entry.map_err(io)?.path();
+            let hidden = path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with('.'));
+            if path.is_file() && !hidden && path.extension() == current.extension() {
+                files.push(path);
+            }
+        }
+        files.sort();
+        let at = files
+            .iter()
+            .position(|file| *file == current)
+            .ok_or_else(|| PluginError::new("the current preset's file is gone from its folder"))?;
+        let next = (at as i64 + i64::from(steps)).rem_euclid(files.len() as i64) as usize;
+        self.load_preset(&files[next].to_string_lossy())
     }
 
     /// `preset.store_a` and `preset.store_b`: keeps the patch now as
@@ -382,7 +457,8 @@ impl Reagent {
             });
         };
         let before = self.patch()?;
-        self.history.record(before);
+        let label = self.step_label(COMPARE_LABEL);
+        self.history.record(before, label);
         self.apply_preset(&other)?;
         Ok(CompareResult {
             showing: self.compare.showing().key().to_owned(),
@@ -394,22 +470,36 @@ impl Reagent {
     /// change.
     fn undo_preset(&mut self) -> Result<UndoResult, PluginError> {
         let current = self.patch()?;
+        let label = self.history.undo_label().map(str::to_owned);
         let Some(past) = self.history.undo(&current) else {
-            return Ok(UndoResult { restored: false });
+            return Ok(UndoResult {
+                restored: false,
+                label: None,
+            });
         };
         self.apply_preset(&past)?;
-        Ok(UndoResult { restored: true })
+        Ok(UndoResult {
+            restored: true,
+            label,
+        })
     }
 
     /// `preset.redo`: puts the patch back the way the last undo turned it
     /// away from.
     fn redo_preset(&mut self) -> Result<UndoResult, PluginError> {
         let current = self.patch()?;
+        let label = self.history.redo_label().map(str::to_owned);
         let Some(forward) = self.history.redo(&current) else {
-            return Ok(UndoResult { restored: false });
+            return Ok(UndoResult {
+                restored: false,
+                label: None,
+            });
         };
         self.apply_preset(&forward)?;
-        Ok(UndoResult { restored: true })
+        Ok(UndoResult {
+            restored: true,
+            label,
+        })
     }
 }
 
@@ -418,6 +508,13 @@ impl Reagent {
 pub struct PathArgs {
     /// The preset file to write, or to read.
     pub path: String,
+}
+
+/// The argument of `preset.step`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StepArgs {
+    /// How many presets on: 1 is the next, −1 the previous.
+    pub steps: i32,
 }
 
 /// What `preset.save` and `preset.load` return.
@@ -449,6 +546,10 @@ pub struct CompareResult {
 pub struct UndoResult {
     /// Whether a patch was put back.
     pub restored: bool,
+    /// The label of the change it took back (`preset.undo`) or made again
+    /// (`preset.redo`), when a patch was put back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// Adds Reagent's preset commands to `registry`.
@@ -470,7 +571,7 @@ pub fn register(registry: &mut Commands) -> Result<(), RegisterError> {
             .result::<PresetResult>(),
     )?;
     registry.register(
-        CommandSpec::new(LOAD, "Load Preset")
+        CommandSpec::new(LOAD, LOAD_LABEL)
             .description(
                 "Reads the preset file at `path` and applies it: every parameter the preset \
                  doesn't name goes back to its default, the matrix and the oscillators' state \
@@ -506,7 +607,7 @@ pub fn register(registry: &mut Commands) -> Result<(), RegisterError> {
             .result::<StoreResult>(),
     )?;
     registry.register(
-        CommandSpec::new(COMPARE, "Compare A and B")
+        CommandSpec::new(COMPARE, COMPARE_LABEL)
             .description(
                 "Keeps the patch now on the side showing and applies the patch kept on the other \
                  side, switching A/B compare to it. With nothing kept on the other side it \
@@ -522,7 +623,8 @@ pub fn register(registry: &mut Commands) -> Result<(), RegisterError> {
         CommandSpec::new(UNDO, "Undo Preset Change")
             .description(
                 "Puts the patch back as it was before the last `preset.load` or `preset.compare`, \
-                 and says whether there was one. It leaves the two sides of A/B compare alone.",
+                 and says whether there was one and which change it took back. It leaves the two \
+                 sides of A/B compare alone.",
             )
             .permission(Permission::Edit)
             .context(Context::Global)
@@ -530,10 +632,23 @@ pub fn register(registry: &mut Commands) -> Result<(), RegisterError> {
             .result::<UndoResult>(),
     )?;
     registry.register(
+        CommandSpec::new(STEP, "Step Preset")
+            .description(
+                "Loads the preset `steps` places on from the one last loaded or saved (1 is the \
+                 next, −1 the previous): among the files beside it with the same extension, in \
+                 name order, wrapping round at either end. It does what `preset.load` does, and \
+                 reads files outside the project, so an agent asks the person first.",
+            )
+            .permission(Permission::External)
+            .context(Context::Global)
+            .args::<StepArgs>()
+            .result::<PresetResult>(),
+    )?;
+    registry.register(
         CommandSpec::new(REDO, "Redo Preset Change")
             .description(
                 "Puts the patch back the way the last `preset.undo` turned it away from, and says \
-                 whether there was one.",
+                 whether there was one and which change it made again.",
             )
             .permission(Permission::Edit)
             .context(Context::Global)
@@ -562,6 +677,10 @@ pub fn run(plugin: &mut Reagent, id: &str, args: &Value) -> Result<Value, Plugin
         COMPARE => Ok(serde_json::to_value(plugin.compare_sides()?).expect("serialisable")),
         UNDO => Ok(serde_json::to_value(plugin.undo_preset()?).expect("serialisable")),
         REDO => Ok(serde_json::to_value(plugin.redo_preset()?).expect("serialisable")),
+        STEP => Ok(
+            serde_json::to_value(plugin.step_preset(parse_args::<StepArgs>(args)?.steps)?)
+                .expect("serialisable"),
+        ),
         _ => Err(PluginError::new(format!("no command `{id}`"))),
     }
 }

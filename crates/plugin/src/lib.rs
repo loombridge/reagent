@@ -95,7 +95,11 @@ impl Plugin for Reagent {
 
     #[cfg(feature = "export")]
     fn editor(&mut self) -> Option<Box<dyn lspk_plugin::Editor>> {
-        Some(Box::new(lspk_ui::generic_editor(NAME, &params())))
+        Some(Box::new(lspk_ui::generic_editor_with(
+            NAME,
+            &params(),
+            editor_actions(),
+        )))
     }
 
     fn register_commands(&self, registry: &mut Commands) -> Result<(), RegisterError> {
@@ -109,6 +113,40 @@ impl Plugin for Reagent {
     ) -> Result<serde_json::Value, PluginError> {
         self.0.run_command(id, args)
     }
+
+    fn run_command_labelled(
+        &mut self,
+        id: &str,
+        args: &serde_json::Value,
+        undo_label: &str,
+    ) -> Result<serde_json::Value, PluginError> {
+        self.0.run_command_labelled(id, args, undo_label)
+    }
+}
+
+/// The commands the editor shows as buttons: undo, redo and A/B compare,
+/// each labelled as its command is.
+///
+/// # Panics
+///
+/// If one of the commands isn't registered.
+#[cfg(feature = "export")]
+#[must_use]
+pub fn editor_actions() -> Vec<lspk_ui::Action> {
+    let mut registry = Commands::new();
+    reagent_core::preset::register(&mut registry).expect("the preset commands register");
+    [
+        preset::UNDO,
+        preset::REDO,
+        preset::STORE_A,
+        preset::STORE_B,
+        preset::COMPARE,
+    ]
+    .map(|id| {
+        let spec = registry.get(id).expect("a registered command");
+        lspk_ui::Action::new(id, spec.label.to_string())
+    })
+    .into()
 }
 
 #[cfg(feature = "export")]
