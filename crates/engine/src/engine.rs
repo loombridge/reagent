@@ -79,7 +79,9 @@ use crate::params::{
 };
 use crate::patch::{CHANNELS, ChannelState, FilterState, Patch, PatchReceiver};
 use crate::routing::{self, BusOutput, ChannelOutput, FilterOutput, balance_shares, pan_gains};
+use crate::stepping::{Stepper, Stepping};
 use crate::telemetry::{self, Frame, Publisher};
+use crate::tuning::{Control, Tuner};
 
 /// The most voices (engine-core R117).
 pub const MAX_VOICES: usize = lspk_voice::MAX_VOICES;
@@ -407,6 +409,13 @@ struct Synth {
     amp: f32,
     tuning: f32,
     reference: f32,
+    /// Where each note's tuning comes from, and what it gave each voice at
+    /// its start (or, following an MTS-ESP master, as of this stretch).
+    tuner: Tuner,
+    tune_off: [f32; S],
+    /// Each voice's pitch with its tuning added: the pitch everything that
+    /// follows the note reads.
+    tuned: [f32; S],
     env_scale: f64,
     /// The tempo the envelopes' timing was built at.
     env_tempo: f64,
@@ -469,6 +478,10 @@ pub struct Engine {
     quiet: usize,
     /// Where the interface's live values go, once an editor can watch.
     telemetry: Option<telemetry::State>,
+    /// The tuning's other reader: it drops the notes a tuning leaves out
+    /// before the voices see them.
+    tuner: Tuner,
+    stepper: Stepper,
 }
 
 impl std::fmt::Debug for Engine {
@@ -641,6 +654,9 @@ impl Engine {
             amp: 1.0,
             tuning: 0.0,
             reference: 440.0,
+            tuner: Tuner::new(Control::new(), None),
+            tune_off: [0.0; S],
+            tuned: [0.0; S],
             env_scale: 1.0,
             env_tempo: 120.0,
             patch: Patch::default(),
@@ -707,6 +723,8 @@ impl Engine {
             max_frames,
             quiet: SETTLE_FRAMES,
             telemetry: None,
+            tuner: Tuner::new(Control::new(), None),
+            stepper: Stepper::new(Stepping::new()),
         }
     }
 
@@ -742,6 +760,17 @@ impl Engine {
         self.telemetry.take().map(|t| t.publisher)
     }
 
+    /// Tunes notes by `tuner`'s sources, as the plug-in does at activation.
+    pub fn attach_tuner(&mut self, tuner: Tuner) {
+        self.synth.tuner = tuner.clone();
+        self.tuner = tuner;
+    }
+
+    /// Steps presets on the controllers or keys `stepping` assigns.
+    pub fn attach_stepping(&mut self, stepping: Arc<Stepping>) {
+        self.stepper = Stepper::new(stepping);
+    }
+
     fn render_block(
         &mut self,
         audio: &mut Buffers<'_>,
@@ -757,7 +786,17 @@ impl Engine {
             out[..frames * factor].fill(0.0);
         }
         self.synth.block_frame = 0;
-        self.voices.process(events.iter(), frames, &mut self.synth);
+        // The notes that step a preset and the keys a tuning leaves out
+        // never reach the voices.
+        let (stepper, tuner) = (&mut self.stepper, &self.tuner);
+        let events = events.iter().filter(|event| {
+            if stepper.takes(event) {
+                return false;
+            }
+            !matches!(event, Event::NoteOn { note, .. }
+                if note.key.is_some_and(|key| tuner.offset(key).is_none()))
+        });
+        self.voices.process(events, frames, &mut self.synth);
 
         // Down to the host's rate.
         let stage = factor.trailing_zeros() as usize;
@@ -1671,7 +1710,7 @@ impl Synth {
                 let lanes = span * copies;
                 // Each copy's lane takes its voice's pitch, and glide's step at
                 // the quality's rate.
-                let pitch = voices.pitch();
+                let pitch = self.tuned;
                 let step = voices.pitch_step();
                 for v in 0..span {
                     for i in 0..copies {
@@ -1768,7 +1807,7 @@ impl Synth {
             } else if s == OSCILLATORS {
                 // The sub: one lane per voice (R40), its pitch and phase
                 // modulated at audio rate (R42).
-                let pitch = voices.pitch();
+                let pitch = self.tuned;
                 let step = voices.pitch_step();
                 for v in 0..span {
                     self.lane_pitch[v] = pitch[v];
@@ -1845,7 +1884,7 @@ impl Synth {
             } else {
                 // The noise: a sample player over one of Reagent's own
                 // colour blocks (R45 to R49).
-                let pitch = voices.pitch();
+                let pitch = self.tuned;
                 let step = voices.pitch_step();
                 for v in 0..span {
                     self.lane_pitch[v] = pitch[v];
@@ -2025,7 +2064,7 @@ impl Synth {
             let p = |param: u16| params::id(FILTER, f as u8, param);
             if st.on {
                 let cutoff_mod = modulation(&self.modeng, self.values.dest(p(filter::CUTOFF)));
-                let pitch = voices.pitch();
+                let pitch = self.tuned;
                 let step = voices.pitch_step();
                 let ref_offset = 12.0 * (self.reference / 440.0).log2();
                 // The first of A, B and C with key tracking on, glide
@@ -2254,6 +2293,26 @@ impl Synth {
         }
     }
 
+    // shortcut: a voice's tuning is one offset for its note, so glide between
+    // two retuned keys steps the offset at the new note rather than gliding it;
+    // ramp it with the glide if the step is heard.
+    /// Adds each voice's tuning to its pitch. A voice's tuning is read at
+    /// its start; with an MTS-ESP master and Note-on only off, it is read
+    /// again for every stretch, so the master can retune a held note.
+    fn retune(&mut self, voices: &VoiceBlock) {
+        let pitch = voices.pitch();
+        let follow = self.tuner.follows_master();
+        for (v, &pitch) in pitch.iter().enumerate().take(S) {
+            if follow && voices.active_mask() & (1 << v) != 0 {
+                self.tune_off[v] = self
+                    .tuner
+                    .offset(voices.info(v).key)
+                    .unwrap_or(self.tune_off[v]);
+            }
+            self.tuned[v] = pitch + self.tune_off[v];
+        }
+    }
+
     /// Starts the sounding voices again on each oscillator whose unison
     /// count changed, as fresh notes on the new layout.
     fn restart_units(&mut self, voices: &VoiceBlock) {
@@ -2267,7 +2326,7 @@ impl Synth {
                 let lanes = unit.osc.lanes_of(v);
                 unit.osc
                     .set_unison(lanes, unit.lanes.pitch(), unit.lanes.frame());
-                unit.osc.start(v, voices.pitch()[v], Onset::Fresh);
+                unit.osc.start(v, self.tuned[v], Onset::Fresh);
             }
         }
     }
@@ -2307,7 +2366,9 @@ impl VoiceHandler for Synth {
                 {
                     self.ends.push((time, note));
                 }
-                let key = voices.pitch()[v];
+                self.tune_off[v] = self.tuner.offset(voices.info(v).key).unwrap_or(0.0);
+                self.tuned[v] = voices.pitch()[v] + self.tune_off[v];
+                let key = self.tuned[v];
                 let velocity = voices.velocity()[v];
                 let onset = match start {
                     Start::Fresh => Onset::Fresh,
@@ -2395,6 +2456,7 @@ impl VoiceHandler for Synth {
         }
         self.block_frame = frames.start;
         self.rebuild(voices.settings_mut());
+        self.retune(voices);
         self.restart_units(voices);
         self.render_modulation(voices, n);
         self.apply_control(voices);

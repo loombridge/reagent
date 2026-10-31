@@ -12,6 +12,7 @@
 //! own state, preset files (the `preset.*` commands), the summary and the
 //! guide agents read.
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use lspk_commands::{CommandSpec, Context, NoArgs, Permission};
@@ -28,12 +29,16 @@ use reagent_engine::engine::{self, Engine, mod_config};
 use reagent_engine::modulation::{self, Needs, NoteCurve, Registry};
 use reagent_engine::params::{FILTERS, global};
 use reagent_engine::patch::{self, ChannelState, FilterState, Patch, PatchSender};
+use reagent_engine::stepping::Stepping;
+use reagent_engine::tuning::mts::Mts;
+use reagent_engine::tuning::{Control, Master, Tuner};
 use reagent_engine::{describe, table};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub mod patches;
 pub mod preset;
+pub mod tuning;
 
 use preset::SlotState;
 
@@ -150,6 +155,17 @@ pub struct Reagent {
     telemetry: Telemetry,
     /// The engine's end, while no engine holds it.
     publisher: Option<Publisher<Frame>>,
+    /// This instance's tuning, and the engine's view of it.
+    tuning: tuning::Setup,
+    control: Arc<Control>,
+    /// A tuning master standing in for the MTS-ESP library, if one was
+    /// given; otherwise the library is connected at activation.
+    master: Option<Arc<dyn Master>>,
+    /// The controllers or keys that step presets, and the steps waiting.
+    step_setup: tuning::StepSetup,
+    stepping: Arc<Stepping>,
+    /// The preset file last loaded or saved: the folder stepping goes through.
+    preset_path: Option<PathBuf>,
     /// What the interface named the command now running, for the undo
     /// history to record the step under ([`Plugin::run_command_labelled`]).
     undo_label: Option<String>,
@@ -171,6 +187,12 @@ impl Reagent {
     #[must_use]
     pub fn matrix(&self) -> &Matrix {
         &self.matrix
+    }
+
+    /// Has this instance follow `master` as its MTS-ESP source, in place of
+    /// the library: for tests and for hosts that carry their own.
+    pub fn use_master(&mut self, master: Arc<dyn Master>) {
+        self.master = Some(master);
     }
 
     /// The registries the matrix names its sources and destinations from.
@@ -296,6 +318,12 @@ impl Plugin for Reagent {
             history: History::new(preset::UNDO_PRESETS),
             telemetry: Arc::new(Mutex::new(watcher)),
             publisher: Some(publisher),
+            tuning: tuning::Setup::default(),
+            control: Control::new(),
+            master: None,
+            step_setup: tuning::StepSetup::default(),
+            stepping: Stepping::new(),
+            preset_path: None,
             undo_label: None,
         }
     }
@@ -330,6 +358,12 @@ impl Plugin for Reagent {
         );
         engine.attach_patches(patch_receiver);
         engine.attach_telemetry(self.take_publisher());
+        let master = self
+            .master
+            .clone()
+            .or_else(|| Mts::connect().map(|m| Arc::new(m) as Arc<dyn Master>));
+        engine.attach_tuner(Tuner::new(self.control.clone(), master));
+        engine.attach_stepping(self.stepping.clone());
         self.sender = Some((sender, config.sample_rate));
         self.patches = Some(patches);
         Ok(engine)
@@ -343,17 +377,63 @@ impl Plugin for Reagent {
     }
 
     fn save_state(&self) -> Vec<u8> {
-        modulation::save(&self.matrix, &self.registry.sources)
+        let matrix = modulation::save(&self.matrix, &self.registry.sources);
+        let matrix = serde_json::from_slice(&matrix).unwrap_or(serde_json::Value::Null);
+        serde_json::to_vec(&serde_json::json!({
+            "matrix": matrix,
+            "tuning": self.tuning,
+            "stepping": self.step_setup,
+        }))
+        .unwrap_or_default()
     }
 
+    /// The state as `save_state` writes it, or as earlier builds did: the
+    /// matrix alone.
     fn load_state(&mut self, data: &[u8]) -> Result<(), PluginError> {
-        self.matrix = modulation::load(data, &self.registry.sources, &self.registry.destinations)
-            .map_err(PluginError::new)?;
+        let whole = serde_json::from_slice::<serde_json::Value>(data)
+            .ok()
+            .filter(|v| v.get("matrix").is_some());
+        let matrix = match &whole {
+            Some(v) => serde_json::to_vec(&v["matrix"]).unwrap_or_default(),
+            None => data.to_vec(),
+        };
+        self.matrix =
+            modulation::load(&matrix, &self.registry.sources, &self.registry.destinations)
+                .map_err(PluginError::new)?;
+        if let Some(whole) = whole {
+            fn read<T: serde::de::DeserializeOwned + Default>(
+                whole: &serde_json::Value,
+                key: &str,
+            ) -> T {
+                whole
+                    .get(key)
+                    .cloned()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default()
+            }
+            self.tuning = read(&whole, "tuning");
+            self.step_setup = read(&whole, "stepping");
+            self.stepping.set(
+                self.step_setup.mode(),
+                self.step_setup.forward,
+                self.step_setup.backward,
+            );
+            // A tuning file that has gone stays named, so the state keeps
+            // it; the instance plays in equal temperament until it's back.
+            let _ = self.apply_tuning();
+        }
         self.send_matrix();
         Ok(())
     }
 
     fn on_main_thread(&mut self) {
+        // Preset steps the audio thread took from the controllers or keys.
+        // A step that can't load (no preset yet, a bad file) has nowhere to
+        // report to.
+        let steps = self.stepping.take();
+        if steps != 0 {
+            let _ = self.step_preset(steps);
+        }
         // The note curves' switches live in the matrix, which the main
         // thread compiles; a host's change to them takes a new program.
         if self.sync_note_curves() {
@@ -386,6 +466,7 @@ impl Plugin for Reagent {
     fn register_commands(&self, registry: &mut Commands) -> Result<(), RegisterError> {
         lspk_mod::register(registry)?;
         preset::register(registry)?;
+        tuning::register(registry)?;
         for spec in [
             CommandSpec::new(INIT_PATCH, "Init Patch")
                 .description(
@@ -524,8 +605,11 @@ impl Plugin for Reagent {
             }
             return Ok(result);
         }
-        if id.starts_with("preset.") {
+        if id.starts_with("preset.") && id != tuning::SET_STEPPING {
             return preset::run(self, id, args);
+        }
+        if id.starts_with("tuning.") || id == tuning::SET_STEPPING {
+            return tuning::run(self, id, args);
         }
         Err(PluginError::new(format!("no command `{id}`")))
     }

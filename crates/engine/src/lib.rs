@@ -7,8 +7,10 @@
 //! | [`routing`] | Where each channel, filter and bus goes, and the rule that keeps routes from looping |
 //! | [`modulation`] | Every modulation source and destination, and the matrix as a patch saves it |
 //! | [`patch`] | The patch compiler: the modules in use as a flat program, and its mailbox |
+//! | [`stepping`] | Preset stepping by a controller or a note |
 //! | [`table`] | The default wavetable |
 //! | [`telemetry`] | The live values the audio thread shows the interface |
+//! | [`tuning`] | Tuning files and MTS-ESP: how far each key sounds from equal temperament |
 //! | [`engine`] | The engine on the audio thread |
 //! | [`describe`] | A patch in prose, and the guide for agents |
 //!
@@ -33,8 +35,10 @@ pub mod modulation;
 pub mod params;
 pub mod patch;
 pub mod routing;
+pub mod stepping;
 pub mod table;
 pub mod telemetry;
+pub mod tuning;
 
 pub use engine::Engine;
 pub use modulation::Registry;

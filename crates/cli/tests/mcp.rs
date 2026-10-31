@@ -95,6 +95,7 @@ fn an_agent_lists_describes_and_reads_the_guides_by_id() {
         .read_resource("lspk://plugin-guide")
         .expect("Reagent's guide");
     assert!(own.contains("Filter balance"), "{own}");
+    assert!(own.contains("Working with the tools"), "{own}");
 
     let areas = call(&mut client, "list_commands", json!({}));
     assert!(areas["areas"]["preset"].as_u64() > Some(0), "{areas}");

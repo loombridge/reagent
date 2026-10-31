@@ -2416,6 +2416,7 @@ name = "reagent"
 version = "0.0.0"
 dependencies = [
  "lspk-agent",
+ "lspk-commands",
  "lspk-dsp",
  "lspk-mod",
  "lspk-params",
@@ -2461,6 +2462,7 @@ dependencies = [
  "lspk-params",
  "lspk-plugin",
  "lspk-presets",
+ "lspk-test",
  "reagent-engine",
  "schemars",
  "serde",
@@ -2471,6 +2473,7 @@ dependencies = [
 name = "reagent-engine"
 version = "0.0.0"
 dependencies = [
+ "libloading 0.8.9",
  "lspk-dsp",
  "lspk-mod",
  "lspk-params",
@@ -2484,6 +2487,20 @@ dependencies = [
 [[package]]
 name = "reagent-import"
 version = "0.0.0"
+
+[[package]]
+name = "reagent-match"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "lspk-params",
+ "lspk-rt",
+ "lspk-test",
+ "reagent-core",
+ "reagent-engine",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "reagent-ui"
