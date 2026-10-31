@@ -151,6 +151,8 @@ impl Reference for External {
             .args(&self.command[1..])
             .arg(&json)
             .arg(&wav)
+            // Its output goes to stderr, so it can't corrupt a JSON report.
+            .stdout(std::io::stderr())
             .status()
             .map_err(|e| format!("{}: {e}", self.command[0]))?;
         let audio = if status.success() {
