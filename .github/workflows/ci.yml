@@ -143,6 +143,13 @@ jobs:
           NEXTEST_PROFILE: ci
         run: cargo xtask check
 
+      # The maintainers' feature inventory isn't in this repository: the check
+      # says it was skipped where it's absent, and fails a row checked
+      # against an older reference version where it's present.
+      - name: cargo xtask reagent-parity
+        if: ${{ !cancelled() }}
+        run: cargo xtask reagent-parity
+
       # Every format's validators on the plug-in: clap-validator, Steinberg's
       # VST3 validator (which xtask builds from the kit's vendored VST3 SDK)
       # on every platform, and on macOS auval and pluginval.
