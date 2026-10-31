@@ -140,6 +140,9 @@ pub struct Reagent {
     compare: Compare,
     /// The patches before the preset changes, for undo and redo.
     history: History,
+    /// What the interface named the command now running, for the undo
+    /// history to record the step under ([`Plugin::run_command_labelled`]).
+    undo_label: Option<String>,
 }
 
 impl std::fmt::Debug for Reagent {
@@ -258,6 +261,7 @@ impl Plugin for Reagent {
             slots: preset::default_slots(),
             compare: Compare::new(),
             history: History::new(preset::UNDO_PRESETS),
+            undo_label: None,
         }
     }
 
@@ -487,6 +491,18 @@ impl Plugin for Reagent {
             return preset::run(self, id, args);
         }
         Err(PluginError::new(format!("no command `{id}`")))
+    }
+
+    fn run_command_labelled(
+        &mut self,
+        id: &str,
+        args: &serde_json::Value,
+        undo_label: &str,
+    ) -> Result<serde_json::Value, PluginError> {
+        self.undo_label = Some(undo_label.to_owned());
+        let result = self.run_command(id, args);
+        self.undo_label = None;
+        result
     }
 }
 
