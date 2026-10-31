@@ -6,12 +6,11 @@
 //! re-check), and when the inventory's summary table isn't the one its rows
 //! produce. `--update` rewrites the summary table instead of failing on it.
 //!
-//! The inventory is `PATH`, else `$REAGENT_INVENTORY`, else the file ending
-//! in `inventory.md` in the maintainers' folder `~/code/beatlayer-internal/docs/reagent`.
-//! Without one (an outside contributor's checkout, or CI) the check says it
-//! was skipped and passes.
+//! The inventory is `PATH`, else `$REAGENT_INVENTORY`. Without one (an
+//! outside contributor's checkout, or CI) the check says it was skipped and
+//! passes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// The columns a summary row counts, in order: the first word of a row's
 /// Investigate cell.
@@ -20,7 +19,8 @@ const KINDS: [&str; 4] = ["ready", "observe", "measure", "decide"];
 pub fn run(args: &[String]) -> Result<(), String> {
     let update = args.iter().any(|a| a == "--update");
     let path = args.iter().find(|a| *a != "--update").map(PathBuf::from);
-    let Some(path) = path.or_else(find_inventory) else {
+    let Some(path) = path.or_else(|| std::env::var_os("REAGENT_INVENTORY").map(PathBuf::from))
+    else {
         eprintln!("skipped: no inventory here (only maintainers' checkouts have it)");
         return Ok(());
     };
@@ -61,18 +61,6 @@ pub fn run(args: &[String]) -> Result<(), String> {
         inventory.reference
     );
     Ok(())
-}
-
-fn find_inventory() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("REAGENT_INVENTORY") {
-        return Some(path.into());
-    }
-    let dir = Path::new(&std::env::var_os("HOME")?).join("code/beatlayer-internal/docs/reagent");
-    std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .find(|p| p.to_string_lossy().ends_with("inventory.md"))
 }
 
 #[derive(Debug)]
