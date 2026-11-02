@@ -943,9 +943,6 @@ impl Processor for Engine {
         events: &Events<'_>,
         cx: &mut ProcessContext<'_>,
     ) -> ProcessStatus {
-        // The host's thread may not flush denormals; a decaying tail would
-        // reach the output as subnormal samples and slow the block.
-        let _denormals = lspk_rt::denormals::DenormalGuard::new();
         let frames = audio.frames();
         if frames > self.max_frames {
             // Never asked for by a host that keeps to its maximum; split.
@@ -960,6 +957,9 @@ impl Processor for Engine {
             self.synth.advance_idle(frames);
             return ProcessStatus::Sleep;
         }
+        // The host's thread may not flush denormals; a decaying tail would
+        // reach the output as subnormal samples and slow the block.
+        let _denormals = lspk_rt::denormals::DenormalGuard::new();
         self.render_block(audio, events, cx)
     }
 
