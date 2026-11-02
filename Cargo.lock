@@ -2480,6 +2480,7 @@ dependencies = [
  "lspk-mod",
  "lspk-params",
  "lspk-plugin",
+ "lspk-rt",
  "lspk-voice",
  "lspk-wavetable",
  "serde",

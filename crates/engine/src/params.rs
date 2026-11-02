@@ -114,6 +114,11 @@ pub mod osc {
     pub const DETUNE_RANGE: u16 = 33;
     /// Frame spread, −100 to +100 (R38).
     pub const FRAME_SPREAD: u16 = 34;
+    /// Tuning mode: Semitones or Steps (R4). In Steps, Octave counts
+    /// periods and Step counts steps of the MTS-ESP tuning.
+    pub const TUNING_MODE: u16 = 35;
+    /// Step, −127 to +127 steps of the MTS-ESP tuning, used in Steps mode.
+    pub const STEP: u16 = 36;
 }
 
 /// The sub oscillator's own parameters, after the channel's (engine-core
@@ -749,6 +754,21 @@ pub fn oscillator() -> ModuleType {
                 ParamUnit::None,
             )
             .describe("Spreads the copies' frames around Frame, so they play different frames."),
+        )
+        .param(choice(
+            TUNING_MODE,
+            "Tuning mode",
+            &["Semitones", "Steps"],
+            0,
+            "How the oscillator's pitch fields count: Semitones in twelve-tone octaves and \
+             semitones; Steps in periods and steps of the MTS-ESP tuning, and only while an \
+             MTS-ESP master tunes the instance.",
+        ))
+        .param(
+            ParamDescriptor::integer(n(STEP), "Step", (-127, 127), 0, ParamUnit::None).describe(
+                "In Steps mode, transposes the oscillator by steps of the MTS-ESP tuning, at \
+                 most a scale's size either way.",
+            ),
         )
 }
 

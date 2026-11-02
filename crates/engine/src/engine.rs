@@ -389,6 +389,11 @@ struct Synth {
     /// again on the new layout.
     restart: [bool; OSCILLATORS],
     osc_params: [lspk_wavetable::osc::Params; OSCILLATORS],
+    /// Each oscillator in Steps mode: the periods and steps it is set to.
+    pitch_steps: [Option<(i32, i32)>; OSCILLATORS],
+    /// What Steps adds to each oscillator's pitch for each voice's key, in
+    /// semitones; zero outside Steps mode.
+    steps_off: [[f32; S]; OSCILLATORS],
     /// The sub's controls, as last rebuilt.
     sub_params: lspk_wavetable::sub::Params,
     /// The noise's controls, as last rebuilt.
@@ -617,6 +622,8 @@ impl Engine {
             unison: [Unison::default(); OSCILLATORS],
             restart: [false; OSCILLATORS],
             osc_params: [lspk_wavetable::osc::Params::default(); OSCILLATORS],
+            pitch_steps: [None; OSCILLATORS],
+            steps_off: [[0.0; S]; OSCILLATORS],
             sub_params: lspk_wavetable::sub::Params::default(),
             noise_params: lspk_wavetable::noise::Params::default(),
             channels: [ChannelState {
@@ -950,6 +957,9 @@ impl Processor for Engine {
             self.synth.advance_idle(frames);
             return ProcessStatus::Sleep;
         }
+        // The host's thread may not flush denormals; a decaying tail would
+        // reach the output as subnormal samples and slow the block.
+        let _denormals = lspk_rt::denormals::DenormalGuard::new();
         self.render_block(audio, events, cx)
     }
 
@@ -1117,9 +1127,25 @@ impl Synth {
             let p = |param: u16| params::id(module, instance, param);
             if s < OSCILLATORS {
                 let frames = self.table_frames.max(1) as f32;
+                let steps = v.get(p(osc::TUNING_MODE)).round() as i64 == 1;
+                self.pitch_steps[s] = steps.then(|| {
+                    (
+                        v.get(p(osc::OCTAVE)).round() as i32,
+                        v.get(p(osc::STEP)).round() as i32,
+                    )
+                });
                 let params = lspk_wavetable::osc::Params {
-                    octave: v.get(p(osc::OCTAVE)).round() as i32,
-                    semitone: v.get(p(osc::SEMITONE)).round() as i32,
+                    // In Steps mode the voice's pitch carries them instead.
+                    octave: if steps {
+                        0
+                    } else {
+                        v.get(p(osc::OCTAVE)).round() as i32
+                    },
+                    semitone: if steps {
+                        0
+                    } else {
+                        v.get(p(osc::SEMITONE)).round() as i32
+                    },
                     fine: f32_of(p(osc::FINE)),
                     coarse: f32_of(p(osc::SWEEP)),
                     frame: 1.0 + f32_of(p(osc::FRAME)) / 100.0 * (frames - 1.0),
@@ -1722,9 +1748,17 @@ impl Synth {
                 // tuning, in semitones.
                 let pitch_mods = [osc::OCTAVE, osc::SEMITONE, osc::FINE, osc::SWEEP]
                     .map(|m| (m, modulation(&self.modeng, self.values.dest(p(m)))));
+                let in_steps = self.pitch_steps[s].is_some();
+                // A period, where Octave is one, in semitones.
+                let period = if in_steps {
+                    self.tuner.period_semitones()
+                } else {
+                    12.0
+                };
                 let any_pitch = pitch_mods.iter().any(|(_, m)| m.is_some())
                     || tuning_mod.is_some()
-                    || self.tuning != 0.0;
+                    || self.tuning != 0.0
+                    || in_steps;
                 if any_pitch {
                     let base = self.osc_params[s].tune();
                     for t in 0..n {
@@ -1733,13 +1767,14 @@ impl Synth {
                                 // Main tuning is unbounded (R137).
                                 -64.0 + 128.0 * pos
                             });
-                            let mut tune = base;
+                            let mut tune = base + self.steps_off[s][v];
                             for &(m, ref modu) in &pitch_mods {
                                 if let Some(pos) = modu.at(t, v) {
                                     let real = self.values.real(p(m), pos);
                                     let base_real = self.values.get(p(m)) as f32;
                                     let (real, scale) = match m {
-                                        osc::OCTAVE => (real.round(), 12.0),
+                                        osc::OCTAVE => (real.round(), period),
+                                        osc::SEMITONE if in_steps => (0.0, 0.0),
                                         osc::SEMITONE => (real.round(), 1.0),
                                         osc::FINE => (real, 0.01),
                                         _ => (real, 1.0),
@@ -2080,6 +2115,10 @@ impl Synth {
                     [osc::OCTAVE, osc::SEMITONE, osc::FINE, osc::SWEEP]
                         .map(|m| (m, modulation(&self.modeng, self.values.dest(p_osc(m)))))
                 });
+                let tracking_period = match tracking_osc {
+                    Some((s, _)) if self.pitch_steps[s].is_some() => self.tuner.period_semitones(),
+                    _ => 12.0,
+                };
                 let tracking_any_pitch = tracking_pitch_mods
                     .as_ref()
                     .is_some_and(|mods| mods.iter().any(|(_, m)| m.is_some()))
@@ -2108,7 +2147,10 @@ impl Synth {
                                             let real = self.values.real(p_osc(m), pos);
                                             let base_real = self.values.get(p_osc(m)) as f32;
                                             let (real, scale) = match m {
-                                                osc::OCTAVE => (real.round(), 12.0),
+                                                osc::OCTAVE => (real.round(), tracking_period),
+                                                osc::SEMITONE if self.pitch_steps[s].is_some() => {
+                                                    (0.0, 0.0)
+                                                }
                                                 osc::SEMITONE => (real.round(), 1.0),
                                                 osc::FINE => (real, 0.01),
                                                 _ => (real, 1.0),
@@ -2122,7 +2164,8 @@ impl Synth {
                             } else {
                                 tracking_tune
                             };
-                            pitch[v] + step[v] * t as f32 + osc_offset - 60.0 + ref_offset
+                            let steps = tracking_osc.map_or(0.0, |(s, _)| self.steps_off[s][v]);
+                            pitch[v] + step[v] * t as f32 + osc_offset + steps - 60.0 + ref_offset
                         } else {
                             0.0
                         };
@@ -2310,6 +2353,14 @@ impl Synth {
                     .unwrap_or(self.tune_off[v]);
             }
             self.tuned[v] = pitch + self.tune_off[v];
+            for (steps, off) in self.pitch_steps.iter().zip(&mut self.steps_off) {
+                off[v] = match steps {
+                    Some((periods, steps)) if voices.active_mask() & (1 << v) != 0 => {
+                        self.tuner.steps(voices.info(v).key, *periods, *steps)
+                    }
+                    _ => 0.0,
+                };
+            }
         }
     }
 

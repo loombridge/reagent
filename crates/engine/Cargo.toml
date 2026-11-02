@@ -14,6 +14,8 @@ lspk-mod.workspace = true
 lspk-params.workspace = true
 # The processor interface and events, without any format.
 lspk-plugin.workspace = true
+# Flushes denormals while a block renders.
+lspk-rt.workspace = true
 lspk-voice.workspace = true
 lspk-wavetable.workspace = true
 # The MTS-ESP client loads ODDSound's library at run time.

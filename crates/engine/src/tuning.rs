@@ -301,6 +301,24 @@ pub trait Master: Send + Sync {
     fn frequency(&self, key: u8) -> f64;
     /// Whether the master wants key `key` to play nothing.
     fn filtered(&self, key: u8) -> bool;
+    /// The ratio of the master's period (an octave, 2, in most tunings).
+    fn period_ratio(&self) -> f64 {
+        2.0
+    }
+}
+
+/// How many keys one period of `m`'s scale spans: the least distance at
+/// which every key sounds a period above the one below, or twelve if the
+/// table repeats at none up to half the keys.
+fn scale_size(m: &dyn Master) -> usize {
+    let ratio = m.period_ratio();
+    (1..=KEYS / 2)
+        .find(|&n| {
+            (0..KEYS - n).all(|k| {
+                (m.frequency((k + n) as u8) / m.frequency(k as u8) / ratio - 1.0).abs() < 1e-6
+            })
+        })
+        .unwrap_or(12)
 }
 
 /// What the plug-in's main thread sets and the audio thread reads: the
@@ -389,6 +407,29 @@ impl Tuner {
             Some(m) => Some(offset_of(usize::from(key & 127), m.frequency(key))),
             None => Some(0.0),
         }
+    }
+
+    /// What Steps tuning adds to key `key`'s pitch, in semitones: `periods`
+    /// periods of the master's scale and `steps` of its steps, a step being
+    /// one key of its table and at most a scale's size either way. Nothing
+    /// without an MTS-ESP master in use.
+    // shortcut: a step past either end of the keys stops at the end key, and
+    // a scale size that can't be read from the table is taken as twelve.
+    #[must_use]
+    pub fn steps(&self, key: u8, periods: i32, steps: i32) -> f32 {
+        let Some(m) = self.master() else { return 0.0 };
+        let pos = |k: i32| 12.0 * (m.frequency(k.clamp(0, KEYS as i32 - 1) as u8) / 440.0).log2();
+        let size = scale_size(m) as i32;
+        let key = i32::from(key & 127);
+        let stepped = pos(key + steps.clamp(-size, size)) - pos(key);
+        (stepped + f64::from(periods) * 12.0 * m.period_ratio().log2()) as f32
+    }
+
+    /// The semitones one period of the master's scale spans.
+    #[must_use]
+    pub fn period_semitones(&self) -> f32 {
+        self.master()
+            .map_or(12.0, |m| (12.0 * m.period_ratio().log2()) as f32)
     }
 
     /// Whether a sounding note's offset can change under it: an MTS-ESP
