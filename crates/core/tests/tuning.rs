@@ -12,7 +12,7 @@ use lspk_plugin::{Event, Note, Plugin};
 use lspk_test::measure;
 use lspk_test::render::{Instance, Script, Settings};
 use reagent_core::{Reagent, preset};
-use reagent_engine::params::global;
+use reagent_engine::params::{OSC, global, id, osc};
 use reagent_engine::tuning::Master;
 use serde_json::json;
 
@@ -234,6 +234,126 @@ impl Master for Standin {
     fn filtered(&self, key: u8) -> bool {
         u64::from(key) == self.silent.load(Ordering::Relaxed)
     }
+}
+
+/// A stand-in master tuned in `steps` equal steps to a period of ratio
+/// `period`, key 60 at middle C.
+struct Equal {
+    steps: i32,
+    period: f64,
+}
+
+impl Master for Equal {
+    fn online(&self) -> bool {
+        true
+    }
+
+    fn frequency(&self, key: u8) -> f64 {
+        261.625_565
+            * self
+                .period
+                .powf(f64::from(i32::from(key) - 60) / f64::from(self.steps))
+    }
+
+    fn filtered(&self, _: u8) -> bool {
+        false
+    }
+
+    fn period_ratio(&self) -> f64 {
+        self.period
+    }
+}
+
+/// An instance under `master`, oscillator A set to `mode` (0 Semitones, 1
+/// Steps) with `octave` and `semitone` (Period and Step in Steps mode).
+fn tuned_by(master: Arc<dyn Master>, mode: f64, octave: f64, semitone: f64) -> Instance<Reagent> {
+    let mut instance = Instance::<Reagent>::new().expect("an instance");
+    instance.plugin_mut().use_master(master);
+    instance.activate(Settings::new(RATE, 512)).expect("active");
+    let host = instance.host();
+    let a = |param| id(OSC, 0, param);
+    host.edit(a(osc::TUNING_MODE), mode).expect("an edit");
+    host.edit(a(osc::OCTAVE), octave).expect("an edit");
+    host.edit(
+        a(if mode == 1.0 {
+            osc::STEP
+        } else {
+            osc::SEMITONE
+        }),
+        semitone,
+    )
+    .expect("an edit");
+    instance
+}
+
+// Steps tuning: a step is one key of the master's table and a period is the
+// master's own, whatever the octave.
+#[test]
+fn steps_move_by_the_masters_steps_and_periods() {
+    let nineteen = || {
+        Arc::new(Equal {
+            steps: 19,
+            period: 2.0,
+        }) as Arc<dyn Master>
+    };
+    let master = Equal {
+        steps: 19,
+        period: 2.0,
+    };
+    let mut instance = tuned_by(nineteen(), 1.0, 0.0, 1.0);
+    near(pitch(&mut instance, 60), master.frequency(61));
+    // Keys follow the master's table too.
+    near(pitch(&mut instance, 72), master.frequency(73));
+    let mut instance = tuned_by(nineteen(), 1.0, 1.0, 0.0);
+    near(pitch(&mut instance, 60), 2.0 * master.frequency(60));
+    let mut instance = tuned_by(nineteen(), 1.0, 0.0, -19.0);
+    near(pitch(&mut instance, 60), master.frequency(41));
+    // At most a scale's size either way.
+    let mut instance = tuned_by(nineteen(), 1.0, 0.0, 30.0);
+    near(pitch(&mut instance, 60), master.frequency(79));
+}
+
+// Steps tuning, with a period that isn't an octave: 13 steps to 3/1.
+#[test]
+fn a_period_is_the_masters_not_an_octave() {
+    let bohlen_pierce = || {
+        Arc::new(Equal {
+            steps: 13,
+            period: 3.0,
+        }) as Arc<dyn Master>
+    };
+    let master = Equal {
+        steps: 13,
+        period: 3.0,
+    };
+    let mut instance = tuned_by(bohlen_pierce(), 1.0, 1.0, 0.0);
+    near(pitch(&mut instance, 60), 3.0 * master.frequency(60));
+    let mut instance = tuned_by(bohlen_pierce(), 1.0, 0.0, 13.0);
+    near(pitch(&mut instance, 60), master.frequency(73));
+}
+
+// Semitones mode under a master keeps its twelve-tone offsets on the tuned
+// key; Steps with no master in use adds nothing.
+#[test]
+fn semitones_stay_twelve_tone_and_steps_need_a_master() {
+    let nineteen = || {
+        Arc::new(Equal {
+            steps: 19,
+            period: 2.0,
+        }) as Arc<dyn Master>
+    };
+    let master = Equal {
+        steps: 19,
+        period: 2.0,
+    };
+    let mut instance = tuned_by(nineteen(), 0.0, 0.0, 1.0);
+    near(
+        pitch(&mut instance, 60),
+        master.frequency(60) * 2f64.powf(1.0 / 12.0),
+    );
+    let mut instance = tuned_by(nineteen(), 1.0, 1.0, 1.0);
+    run(&mut instance, "tuning.set_mts", json!({ "enabled": false }));
+    near(pitch(&mut instance, 60), equal(60));
 }
 
 fn with_master(master: &Arc<Standin>) -> Instance<Reagent> {

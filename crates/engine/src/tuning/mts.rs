@@ -43,6 +43,7 @@ pub struct Mts {
     has_master: unsafe extern "C" fn() -> bool,
     should_filter: Option<unsafe extern "C" fn(c_char, c_schar) -> bool>,
     deregister: Option<unsafe extern "C" fn()>,
+    period_ratio: Option<unsafe extern "C" fn() -> f64>,
     /// The library's table of 128 frequencies, valid while it is loaded.
     table: *const f64,
     /// Keeps the library loaded.
@@ -86,6 +87,10 @@ impl Mts {
                     .get::<unsafe extern "C" fn()>(b"MTS_DeregisterClient\0")
                     .ok()
                     .map(|f| *f);
+                let period_ratio = library
+                    .get::<unsafe extern "C" fn() -> f64>(b"MTS_GetPeriodRatio\0")
+                    .ok()
+                    .map(|f| *f);
                 let table = get_table();
                 if table.is_null() {
                     return None;
@@ -97,6 +102,7 @@ impl Mts {
                     has_master,
                     should_filter,
                     deregister,
+                    period_ratio,
                     table,
                     _library: library,
                 })
@@ -123,6 +129,14 @@ impl Master for Mts {
         // channel isn't known.
         self.should_filter
             .is_some_and(|f| unsafe { f((key & 127) as c_char, -1) })
+    }
+
+    fn period_ratio(&self) -> f64 {
+        // SAFETY: a function of the loaded library, with no arguments.
+        self.period_ratio
+            .map(|f| unsafe { f() })
+            .filter(|r| *r > 0.0)
+            .unwrap_or(2.0)
     }
 }
 

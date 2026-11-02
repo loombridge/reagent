@@ -41,7 +41,11 @@ pub fn summary(
             continue;
         }
         let output = CHANNEL_OUTPUTS[(get(p(channel::OUTPUT)).round() as usize).min(3)];
-        let tune = 12.0 * get(p(osc::OCTAVE)) + get(p(osc::SEMITONE)) + get(p(osc::SWEEP));
+        let tune = if get(p(osc::TUNING_MODE)) == 1.0 {
+            get(p(osc::SWEEP))
+        } else {
+            12.0 * get(p(osc::OCTAVE)) + get(p(osc::SEMITONE)) + get(p(osc::SWEEP))
+        };
         let mut text = format!(
             "oscillator {name} at {:.0} % level, frame {:.0} %",
             get(p(channel::LEVEL)),
