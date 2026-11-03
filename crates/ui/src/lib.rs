@@ -1,5 +1,13 @@
-//! Will hold Reagent's interface: every page and editor, built from the plug-in kit's widgets.
+//! Reagent's interface, built from the plug-in kit's widgets.
+//!
+//! This is its look: the tokens every page draws with ([`look`]: three
+//! candidate visual identities, each dark and light, and the theme files a
+//! person adds), its icons ([`icons`]), and how its window opens
+//! ([`appearance`]: size presets and the remembered default size).
 
-// Built from the plug-in kit's widget set; this keeps the dependency linked
-// until the first page uses it.
-use lspk_ui as _;
+pub mod appearance;
+pub mod icons;
+pub mod look;
+
+pub use appearance::{Appearance, SIZE_PRESETS, open_options};
+pub use look::Look;
